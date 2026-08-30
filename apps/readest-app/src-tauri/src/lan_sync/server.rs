@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Path as AxumPath, Request, State};
+use axum::extract::{DefaultBodyLimit, Path as AxumPath, Request, State};
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -25,6 +25,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
+
+/// Upper bound for one request body (book binaries ride PUTs). Axum's default
+/// is 2 MiB, which silently 413-rejects nearly every real book; 2 GiB leaves
+/// room for the largest comics/PDFs while still bounding a malicious peer.
+const MAX_BODY_BYTES: usize = 2 * 1024 * 1024 * 1024;
 
 pub struct ServerState {
     /// On-disk root of the remote-format tree (`.../LanSync/`).
@@ -43,6 +48,7 @@ pub fn router(state: Arc<ServerState>) -> Router {
             get(read_file).head(head_file).put(write_file).delete(delete_path),
         )
         .route("/list", post(list_dir))
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_and_cors,
