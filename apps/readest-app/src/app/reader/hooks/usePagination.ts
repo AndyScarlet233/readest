@@ -52,6 +52,26 @@ const isFixedLayoutView = (view: FoliateView | null, storedFixedLayout?: boolean
     storedFixedLayout || view?.isFixedLayout || view?.book?.rendition?.layout === 'pre-paginated',
   );
 
+// Fit-page fixed-layout documents have no overflow to scroll, but a horizontal
+// drag is still a page gesture. Give that gesture immediate visual feedback by
+// translating the renderer itself while the button is held. Use CSS `translate`
+// rather than `transform` so Foliate's own transforms remain untouched.
+const setMousePageDragPreview = (view: FoliateView | null, deltaX: number) => {
+  const renderer = view?.renderer as HTMLElement | undefined;
+  if (!renderer?.style) return;
+  const width = renderer.clientWidth || window.innerWidth || 800;
+  const clampedX = Math.max(-width * 0.45, Math.min(width * 0.45, deltaX));
+  renderer.style.translate = `${clampedX}px 0`;
+  renderer.style.willChange = 'translate';
+};
+
+const clearMousePageDragPreview = (view: FoliateView | null) => {
+  const renderer = view?.renderer as HTMLElement | undefined;
+  if (!renderer?.style) return;
+  renderer.style.translate = '';
+  renderer.style.willChange = '';
+};
+
 export const hasHorizontalPanning = (
   view: FoliateView | null,
   viewSettings: ViewSettings | null | undefined,
@@ -266,6 +286,7 @@ export const usePagination = (
       { horizontal, vertical },
     );
     return () => {
+      clearMousePageDragPreview(view);
       mousePanRef.current = null;
       setMousePanArmed(bookKey, false);
       setMousePanClaimed(bookKey, false);
@@ -298,6 +319,7 @@ export const usePagination = (
       const data = getBookData(bookKey);
       const finish = (commitPageTurn = false) => {
         const state = mousePanRef.current;
+        if (state?.mode === 'page') clearMousePageDragPreview(view);
         mousePanRef.current = null;
         setMousePanArmed(bookKey, false);
         setMousePanClaimed(bookKey, false);
@@ -361,6 +383,7 @@ export const usePagination = (
       const horizontalPan = hasHorizontalPanning(view, settings);
       const verticalPan = hasVerticalPanning(view, settings);
       if (!isFixedLayoutView(view, data?.isFixedLayout) || settings?.scrolled) {
+        if (state.mode === 'page') clearMousePageDragPreview(view);
         mousePanRef.current = null;
         setMousePanArmed(bookKey, false);
         setMousePanClaimed(bookKey, false);
@@ -400,6 +423,7 @@ export const usePagination = (
         setMousePanClaimed(bookKey, true);
       }
       if (state.mode === 'page') {
+        setMousePageDragPreview(view, totalX);
         event.preventDefault?.();
         return true;
       }
