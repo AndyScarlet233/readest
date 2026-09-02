@@ -57,21 +57,13 @@ export const getEnabledFileSyncBackends = (
   return enabled;
 };
 
-/** Any third-party file-sync backend switched on ('lan' excluded — see the gate). */
+/** Any third-party cloud backend switched on. LAN is intentionally excluded. */
 export const hasAnyThirdPartyEnabled = (settings: SystemSettings | null | undefined): boolean =>
-  // 'lan' is excluded on purpose: the home-network backend has no cloud plan,
-  // so flipping it on must not derive Readest Cloud's enabled default to off.
-  getEnabledFileSyncBackends(settings).some((k) => k !== 'lan');
+  getEnabledFileSyncBackends(settings).some((kind) => kind !== 'lan');
 
 /**
  * Whether Readest Cloud syncs the library channels on this device.
- *
- * The `??` is load-bearing: an absent `readestCloud.enabled` reproduces the
- * pre-#5062 exclusive derivation (Readest Cloud owned the library exactly when
- * no third-party provider was enabled), so upgrading users need no migration
- * and disconnecting the last third-party provider still falls back to Readest
- * Cloud. Once the user touches a Cloud Sync checkbox the flag is explicit and
- * wins.
+ * An absent flag keeps the pre-#5062 derived behaviour.
  */
 export const isReadestCloudEnabled = (settings: SystemSettings | null | undefined): boolean =>
   settings?.readestCloud?.enabled ?? !hasAnyThirdPartyEnabled(settings);
@@ -84,19 +76,9 @@ export const getCloudSyncProviders = (
   ...getEnabledFileSyncBackends(settings),
 ];
 
-/** Comma-joined product names, for the "Synced via {{provider}}" copy. */
 export const cloudProvidersDisplayName = (kinds: CloudSyncProviderKind[]): string =>
   kinds.map(cloudProviderDisplayName).join(', ');
 
-/**
- * `isCloudSyncAllowed` needs the UserPlan, which comes from the async
- * auth JWT — non-React modules (transferManager, syncCategories) cannot
- * resolve it synchronously. The plan-resolution flow (auth / quota
- * refresh) writes the latest plan here; gate checks read it back.
- * Defaults to 'free', the most restrictive plan, so a gate evaluated
- * before the first auth resolution can only be too cautious, never too
- * permissive.
- */
 let cachedUserPlan: UserPlan = 'free';
 
 export const setCachedUserPlan = (plan: UserPlan | undefined): void => {
@@ -105,60 +87,57 @@ export const setCachedUserPlan = (plan: UserPlan | undefined): void => {
 
 export const getCachedUserPlan = (): UserPlan => cachedUserPlan;
 
+/**
+ * Cached alongside the plan because upstream premium access now also honors an
+ * outright Full Customization purchase. Defaults to the restrictive side.
+ */
+let cachedCustomizationPurchased = false;
+
+export const setCachedCustomizationPurchased = (purchased: boolean | undefined): void => {
+  cachedCustomizationPurchased = purchased ?? false;
+};
+
+export const getCachedCustomizationPurchased = (): boolean => cachedCustomizationPurchased;
+
 export interface CloudSyncGate {
-  /** Readest Cloud syncs the library channels (rows, progress, notes, files). */
   readest: boolean;
-  /** Third-party backends the user switched on, in the fixed webdav/gdrive/s3/onedrive/icloud/lan order. */
   backends: FileSyncBackendKind[];
-  /**
-   * True when third-party backends are switched on but the plan does not allow
-   * cloud sync. Paused means paused: a paused backend does not sync. Readest
-   * Cloud is unaffected — if it is on it keeps running, because the user asked
-   * for it, not as a silent fallback (#4959).
-   */
+  /** Cloud backends are paused by the entitlement gate; LAN never is. */
   paused: boolean;
 }
 
 export const resolveCloudSyncGate = (
   settings: SystemSettings | null | undefined,
   plan: UserPlan = cachedUserPlan,
+  customizationPurchased: boolean = cachedCustomizationPurchased,
 ): CloudSyncGate => {
   const backends = getEnabledFileSyncBackends(settings);
-  const cloudBackends = backends.filter((k) => k !== 'lan');
+  const cloudBackends = backends.filter((kind) => kind !== 'lan');
   return {
     readest: isReadestCloudEnabled(settings),
     backends,
-    // 'lan' never pauses: it is a local-network channel with no plan or quota —
-    // the fork's "LAN sync sits outside the sync quota" guarantee.
-    paused: cloudBackends.length > 0 && !isCloudSyncAllowed(plan),
+    // LAN sits outside the account plan/quota and therefore never pauses.
+    paused:
+      cloudBackends.length > 0 && !isCloudSyncAllowed(plan, customizationPurchased),
   };
 };
 
-/** The backends that may actually run right now (empty when paused). */
+/** The backends that may actually run right now. LAN survives a cloud pause. */
 export const getActiveFileSyncBackends = (
   settings: SystemSettings | null | undefined,
   plan?: UserPlan,
 ): FileSyncBackendKind[] => {
   const gate = resolveCloudSyncGate(settings, plan);
-  // When the cloud plan pauses the third-party backends, 'lan' keeps running.
-  return gate.paused ? gate.backends.filter((k) => k === 'lan') : gate.backends;
+  return gate.paused ? gate.backends.filter((kind) => kind === 'lan') : gate.backends;
 };
 
 /**
- * One-time upgrade migration helper (appService migrate20260706): users
- * who already had WebDAV/Drive enabled before provider selection shipped
- * become "third-party selected" on upgrade, which gates native Readest
- * Cloud uploads off — with syncBooks at its old `false` default their
- * books would back up nowhere. Flip syncBooks on for every enabled backend.
- * Mutates `settings` in place (the migration runner saves the same
- * snapshot afterwards) and returns whether anything changed.
+ * One-time upgrade migration helper: flip syncBooks on for every enabled
+ * backend so a newly selected provider does not silently omit book binaries.
  */
 export const applySyncBooksAutoEnable = (settings: SystemSettings): boolean => {
   let changed = false;
   for (const kind of getEnabledFileSyncBackends(settings)) {
-    // A switch (rather than a generically-keyed write) keeps each branch's
-    // settings slice type intact; `settings[key] = { ...slice, syncBooks }`
-    // does not typecheck when `key` is a union of literal keys.
     switch (kind) {
       case 'webdav':
         if (settings.webdav && !settings.webdav.syncBooks) {
@@ -201,13 +180,6 @@ export const applySyncBooksAutoEnable = (settings: SystemSettings): boolean => {
   return changed;
 };
 
-/**
- * Whether Readest Cloud storage may be written to (book file uploads and the
- * native book/progress/note rows). Now simply "is Readest Cloud switched on" —
- * it no longer means "and nothing else is". A user can mirror to Drive AND keep
- * Readest Cloud; whether book *files* also go to Readest is still governed
- * separately by the Manage Sync "book" toggle and the transfer queue.
- */
 export const isReadestCloudStorageActive = (
   settings: SystemSettings | null | undefined,
   _plan?: UserPlan,
