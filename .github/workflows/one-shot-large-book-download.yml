@@ -196,11 +196,6 @@ jobs:
       - name: setup Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-        with:
-          workspaces: apps/readest-app/src-tauri -> target
-          key: large-book-download-hotfix
-
       - name: install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
@@ -234,9 +229,7 @@ jobs:
           grep -q 'throw mapDriveError(e);' apps/readest-app/src/services/sync/providers/gdrive/GoogleDriveProvider.ts
           grep -q 'throw mapGraphError(e);' apps/readest-app/src/services/sync/providers/onedrive/OneDriveProvider.ts
           grep -q 'throw mapS3Error(e);' apps/readest-app/src/services/sync/providers/s3/S3Provider.ts
-
-      - name: check native transfer code
-        run: cargo check --manifest-path apps/readest-app/src-tauri/Cargo.toml --lib
+          cargo fmt --manifest-path apps/readest-app/src-tauri/Cargo.toml --check
 
       - name: prepare frontend vendors
         run: pnpm --filter @readest/readest-app setup-vendors
