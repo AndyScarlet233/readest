@@ -128,7 +128,9 @@ const getRawFixedLayoutPanAxes = (event: Event): PanAxes | null | undefined => {
     horizontal: renderer.isOverflowX === true,
     vertical: renderer.isOverflowY === true,
   };
-  return axes.horizontal || axes.vertical ? axes : null;
+  // A fixed-layout page with no overflow yet is still eligible for a drag
+  // session: resize/zoom can expose an axis while the primary button is held.
+  return axes;
 };
 
 // Middle-click autoscroll (#4951). Books where the feature is armed (desktop

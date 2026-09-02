@@ -41,7 +41,11 @@ const DailyBarChart: React.FC<DailyBarChartProps> = ({ daily, fromTs, toTs, vari
     const cells: (DayCell | null)[] = Array.from({ length: mondayLead }, () => null);
     for (let date = start; !date.isAfter(end); date = date.add(1, 'day')) {
       const ts = date.valueOf();
-      cells.push({ dayStartTs: ts, seconds: secondsByDay.get(ts) ?? 0, future: date.isAfter(today) });
+      cells.push({
+        dayStartTs: ts,
+        seconds: secondsByDay.get(ts) ?? 0,
+        future: date.isAfter(today),
+      });
     }
     while (cells.length % 7 !== 0) cells.push(null);
     return cells;
@@ -50,7 +54,11 @@ const DailyBarChart: React.FC<DailyBarChartProps> = ({ daily, fromTs, toTs, vari
   const maxSeconds = Math.max(60, ...daily.map((d) => d.seconds));
 
   if (variant === 'month') {
-    const weekdays = Array.from({ length: 7 }, (_, i) => dayjs().day((i + 1) % 7).format('dd'));
+    const weekdays = Array.from({ length: 7 }, (_, i) =>
+      dayjs()
+        .day((i + 1) % 7)
+        .format('dd'),
+    );
     return (
       <div className='px-1' role='img' aria-label={_('Daily reading time')}>
         <div className='text-neutral-content/55 mb-2 grid grid-cols-7 text-center text-[10px]'>

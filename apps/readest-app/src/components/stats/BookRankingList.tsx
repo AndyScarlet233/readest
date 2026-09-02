@@ -73,7 +73,9 @@ const BookRankingList: React.FC<BookRankingListProps> = ({
                     </span>
                   )}
                 </div>
-                {authors && <p className='text-neutral-content/65 mt-0.5 truncate text-xs'>{authors}</p>}
+                {authors && (
+                  <p className='text-neutral-content/65 mt-0.5 truncate text-xs'>{authors}</p>
+                )}
                 <div className='bg-base-content/8 mt-2 h-0.5 w-full max-w-28 overflow-hidden rounded-full'>
                   <div
                     className='bg-primary/45 h-full rounded-full'

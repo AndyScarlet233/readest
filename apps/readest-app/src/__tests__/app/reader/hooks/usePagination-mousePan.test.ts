@@ -118,6 +118,33 @@ describe('usePagination fixed-layout mouse pan', () => {
     ).toBe(true);
   });
 
+  test('keeps a fixed-layout drag alive until overflow becomes available', () => {
+    let overflowX = false;
+    const view = makeView(false, false);
+    view.isOverflowX = () => overflowX;
+    mocks.getViewSettings.mockReturnValue({
+      scrolled: false,
+      zoomLevel: 100,
+      zoomMode: 'fit-page',
+    });
+    const h = renderHook(() =>
+      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
+    );
+
+    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);
+    overflowX = true;
+    expect(
+      h.result.current.handleMousePan({
+        type: 'mousemove',
+        bookKey: 'book-1',
+        buttons: 1,
+        screenX: 120,
+        screenY: 100,
+      }),
+    ).toBe(true);
+    expect(view.pan).toHaveBeenCalledWith(-20, 0);
+  });
+
   test('ends a claimed drag when a move reports no buttons', () => {
     const view = makeView();
     const h = renderHook(() =>

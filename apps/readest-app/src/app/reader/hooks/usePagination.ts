@@ -50,7 +50,8 @@ export const hasHorizontalPanning = (
 ) => {
   if (!view || !viewSettings) return false;
   return (
-    isPanningView(view, viewSettings) &&
+    view.book?.rendition?.layout === 'pre-paginated' &&
+    !viewSettings.scrolled &&
     typeof view.isOverflowX === 'function' &&
     view.isOverflowX()
   );
@@ -61,7 +62,12 @@ export const hasVerticalPanning = (
   viewSettings: ViewSettings | null | undefined,
 ) => {
   if (!view || !viewSettings) return false;
-  return isPanningView(view, viewSettings) && view.isOverflowY();
+  return (
+    view.book?.rendition?.layout === 'pre-paginated' &&
+    !viewSettings.scrolled &&
+    typeof view.isOverflowY === 'function' &&
+    view.isOverflowY()
+  );
 };
 
 // In scrolled mode, snap the page-scroll distance to whole lines so the new view
@@ -242,11 +248,12 @@ export const usePagination = (
     const data = getBookData(bookKey);
     const horizontal = hasHorizontalPanning(view, settings);
     const vertical = hasVerticalPanning(view, settings);
-    setMousePanArmed(
-      bookKey,
-      Boolean(data?.isFixedLayout && !settings?.scrolled && (horizontal || vertical)),
-      { horizontal, vertical },
-    );
+    // Track the whole primary-button lifetime for fixed-layout pages. Overflow can
+    // change after resize/zoom, so it must not be a hard gate for starting a drag.
+    setMousePanArmed(bookKey, Boolean(data?.isFixedLayout && !settings?.scrolled), {
+      horizontal,
+      vertical,
+    });
     return () => {
       mousePanRef.current = null;
       setMousePanArmed(bookKey, false);
@@ -298,19 +305,16 @@ export const usePagination = (
       if (event.type === 'iframe-mousedown') {
         mousePanRef.current = null;
         setMousePanClaimed(bookKey, false);
-        const canPan = Boolean(
+        const canTrack = Boolean(
           data?.isFixedLayout &&
             !settings?.scrolled &&
-            isPanningView(view, settings) &&
-            (hasHorizontalPanning(view, settings) || hasVerticalPanning(view, settings)),
+            event.button === 0 &&
+            !event.hasTextSelection,
         );
-        const canTrack = canPan && event.button === 0 && !event.hasTextSelection;
         const horizontal = hasHorizontalPanning(view, settings);
         const vertical = hasVerticalPanning(view, settings);
         setMousePanArmed(bookKey, canTrack, { horizontal, vertical });
-        if (!canTrack) return false;
-        if ((!horizontal && !vertical) || event.screenX == null || event.screenY == null)
-          return false;
+        if (!canTrack || event.screenX == null || event.screenY == null) return false;
         mousePanRef.current = {
           startX: event.screenX,
           startY: event.screenY,
@@ -334,16 +338,16 @@ export const usePagination = (
       }
       const horizontalPan = hasHorizontalPanning(view, settings);
       const verticalPan = hasVerticalPanning(view, settings);
-      if (
-        !data?.isFixedLayout ||
-        settings?.scrolled ||
-        !isPanningView(view, settings) ||
-        (!horizontalPan && !verticalPan)
-      ) {
+      if (!data?.isFixedLayout || settings?.scrolled) {
         mousePanRef.current = null;
+        setMousePanArmed(bookKey, false);
         setMousePanClaimed(bookKey, false);
         return false;
       }
+      // Keep the session alive while layout catches up. Once overflow appears, the
+      // same held-button gesture can claim and pan without requiring another click.
+      setMousePanArmed(bookKey, true, { horizontal: horizontalPan, vertical: verticalPan });
+      if (!horizontalPan && !verticalPan) return false;
       if (event.screenX == null || event.screenY == null) return false;
       const totalX = event.screenX - state.startX;
       const totalY = event.screenY - state.startY;

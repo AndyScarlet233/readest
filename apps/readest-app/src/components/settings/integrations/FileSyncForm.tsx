@@ -198,7 +198,9 @@ const FileSyncForm: React.FC<FileSyncFormProps> = ({
           `${failure.title || failure.hash.slice(0, 8)} · ${formatFailurePhase(_, failure.phase)} · ${failure.reason}`,
       );
       if (result.indexPushFailed) {
-        failureLines.push(_('Library index upload failed; other devices may not see these changes.'));
+        failureLines.push(
+          _('Library index upload failed; other devices may not see these changes.'),
+        );
       }
       const detail = failureLines.join('\n');
       setLastFailureDetail(detail || null);

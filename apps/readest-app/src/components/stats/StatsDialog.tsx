@@ -158,7 +158,8 @@ const StatsDialog: React.FC<StatsDialogProps> = ({ onShowBookDetails }) => {
                   </p>
                   {topBook && (
                     <p className='text-neutral-content/65 mt-1 truncate ps-5 text-xs'>
-                      《{topBook.title || _('Unknown Book')}》 · {formatReadingDuration(topBook.seconds, _)} · {topBookShare}%
+                      《{topBook.title || _('Unknown Book')}》 ·{' '}
+                      {formatReadingDuration(topBook.seconds, _)} · {topBookShare}%
                     </p>
                   )}
                 </div>
