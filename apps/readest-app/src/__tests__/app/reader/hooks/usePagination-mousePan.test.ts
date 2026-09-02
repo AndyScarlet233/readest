@@ -49,6 +49,7 @@ import { handleClickCapture } from '@/app/reader/utils/iframeEventHandlers';
 
 const makeView = (x = true, y = true) => ({
   book: { rendition: { layout: 'pre-paginated' } },
+  isFixedLayout: true,
   renderer: { scrolled: false },
   isOverflowX: () => x,
   isOverflowY: () => y,
@@ -143,6 +144,57 @@ describe('usePagination fixed-layout mouse pan', () => {
       }),
     ).toBe(true);
     expect(view.pan).toHaveBeenCalledWith(-20, 0);
+  });
+
+  test('uses the live fixed-layout view when stored metadata lags', () => {
+    const view = makeView();
+    mocks.getBookData.mockReturnValue({ isFixedLayout: false });
+    const h = renderHook(() =>
+      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
+    );
+
+    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);
+    expect(
+      h.result.current.handleMousePan({
+        type: 'iframe-mousemove',
+        bookKey: 'book-1',
+        buttons: 1,
+        screenX: 120,
+        screenY: 100,
+      }),
+    ).toBe(true);
+    expect(view.pan).toHaveBeenCalledWith(-20, 0);
+  });
+
+  test('does not double-pan an iframe move already handled by foliate-fxl', () => {
+    const view = makeView();
+    const h = renderHook(() =>
+      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
+    );
+
+    h.result.current.handleMousePan(point(100, 100));
+    expect(
+      h.result.current.handleMousePan({
+        type: 'iframe-mousemove',
+        bookKey: 'book-1',
+        buttons: 1,
+        screenX: 120,
+        screenY: 100,
+        rawPanHandled: true,
+      }),
+    ).toBe(true);
+    expect(view.pan).not.toHaveBeenCalled();
+
+    expect(
+      h.result.current.handleMousePan({
+        type: 'mousemove',
+        bookKey: 'book-1',
+        buttons: 1,
+        screenX: 130,
+        screenY: 100,
+      }),
+    ).toBe(true);
+    expect(view.pan).toHaveBeenCalledWith(-10, 0);
   });
 
   test('ends a claimed drag when a move reports no buttons', () => {
@@ -256,6 +308,8 @@ describe('usePagination fixed-layout mouse pan', () => {
 
   test('does not arm reflowable, scrolled, or non-overflowing views', () => {
     const view = makeView(false, false);
+    view.isFixedLayout = false;
+    view.book.rendition.layout = 'reflowable';
     const h = renderHook(() =>
       usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
     );

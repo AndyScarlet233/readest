@@ -41,6 +41,8 @@ interface SerializedTouch {
 interface MousePanGesture {
   startX: number;
   startY: number;
+  lastX: number;
+  lastY: number;
   horizontal: boolean;
   vertical: boolean;
   claimed: boolean;
@@ -110,12 +112,12 @@ interface FixedLayoutRenderer extends HTMLElement {
   scrolled?: boolean;
   isOverflowX?: boolean;
   isOverflowY?: boolean;
+  pan?: (dx: number, dy: number) => void | Promise<void>;
 }
 
-// The iframe can inspect its fixed-layout renderer synchronously. This avoids
-// waiting for the parent realm's postMessage when deciding whether to cancel a
-// native touch/mouse gesture on its first move.
-const getRawFixedLayoutPanAxes = (event: Event): PanAxes | null | undefined => {
+// Resolve the actual fixed-layout host from the iframe document. Mouse dragging
+// uses this host directly so movement is not dependent on postMessage timing.
+const getRawFixedLayoutRenderer = (event: Event): FixedLayoutRenderer | null | undefined => {
   const currentTarget = event.currentTarget as Document | null;
   const frame = currentTarget?.defaultView?.frameElement;
   const root = frame?.getRootNode();
@@ -124,13 +126,19 @@ const getRawFixedLayoutPanAxes = (event: Event): PanAxes | null | undefined => {
   if (!renderer) return undefined;
   if (renderer.localName === 'foliate-paginator') return null;
   if (renderer.localName !== 'foliate-fxl' || renderer.scrolled) return null;
-  const axes = {
+  return renderer;
+};
+
+// The iframe can inspect its fixed-layout renderer synchronously. This avoids
+// waiting for the parent realm's postMessage when deciding whether to cancel a
+// native touch/mouse gesture on its first move.
+const getRawFixedLayoutPanAxes = (event: Event): PanAxes | null | undefined => {
+  const renderer = getRawFixedLayoutRenderer(event);
+  if (!renderer) return renderer;
+  return {
     horizontal: renderer.isOverflowX === true,
     vertical: renderer.isOverflowY === true,
   };
-  // A fixed-layout page with no overflow yet is still eligible for a drag
-  // session: resize/zoom can expose an axis while the primary button is held.
-  return axes;
 };
 
 // Middle-click autoscroll (#4951). Books where the feature is armed (desktop
@@ -486,6 +494,8 @@ export const handleMousedown = (bookKey: string, event: MouseEvent) => {
       mousePanGestures.set(bookKey, {
         startX: event.screenX,
         startY: event.screenY,
+        lastX: event.screenX,
+        lastY: event.screenY,
         horizontal: false,
         vertical: false,
         claimed: false,
@@ -539,6 +549,7 @@ export const handleMousemove = (bookKey: string, event: MouseEvent) => {
   }
 
   let rawPanClaimed = false;
+  let rawPanHandled = false;
   if (
     gesture &&
     event.buttons != null &&
@@ -546,9 +557,30 @@ export const handleMousemove = (bookKey: string, event: MouseEvent) => {
     Number.isFinite(event.screenX) &&
     Number.isFinite(event.screenY)
   ) {
-    const rawAxes = getRawFixedLayoutPanAxes(event);
+    const rawRenderer = getRawFixedLayoutRenderer(event);
+    const rawAxes =
+      rawRenderer === undefined
+        ? undefined
+        : rawRenderer === null
+          ? null
+          : {
+              horizontal: rawRenderer.isOverflowX === true,
+              vertical: rawRenderer.isOverflowY === true,
+            };
     const axes = rawAxes === undefined ? mousePanArmedBooks.get(bookKey) : rawAxes;
     rawPanClaimed = tryClaimMousePan(bookKey, gesture, axes, event.screenX, event.screenY);
+    if (rawPanClaimed && rawRenderer?.pan) {
+      const dx = event.screenX - gesture.lastX;
+      const dy = event.screenY - gesture.lastY;
+      gesture.lastX = event.screenX;
+      gesture.lastY = event.screenY;
+      try {
+        void rawRenderer.pan(gesture.horizontal ? -dx : 0, gesture.vertical ? -dy : 0);
+        rawPanHandled = true;
+      } catch {
+        // Parent-realm view.pan remains the fallback for this same move.
+      }
+    }
   }
 
   if (
@@ -572,6 +604,7 @@ export const handleMousemove = (bookKey: string, event: MouseEvent) => {
       buttons: event.buttons,
       screenX: event.screenX,
       screenY: event.screenY,
+      rawPanHandled,
     },
     '*',
   );

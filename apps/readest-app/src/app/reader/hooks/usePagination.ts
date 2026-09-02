@@ -44,6 +44,14 @@ const isPanningView = (view: FoliateView | null, viewSettings: ViewSettings | nu
   );
 };
 
+// The live Foliate view is authoritative for gesture admission. Store metadata
+// can briefly lag a mounted CBZ view during open/recreate, and must not erase a
+// raw iframe drag session that already started on a foliate-fxl renderer.
+const isFixedLayoutView = (view: FoliateView | null, storedFixedLayout?: boolean) =>
+  Boolean(
+    storedFixedLayout || view?.isFixedLayout || view?.book?.rendition?.layout === 'pre-paginated',
+  );
+
 export const hasHorizontalPanning = (
   view: FoliateView | null,
   viewSettings: ViewSettings | null | undefined,
@@ -250,10 +258,11 @@ export const usePagination = (
     const vertical = hasVerticalPanning(view, settings);
     // Track the whole primary-button lifetime for fixed-layout pages. Overflow can
     // change after resize/zoom, so it must not be a hard gate for starting a drag.
-    setMousePanArmed(bookKey, Boolean(data?.isFixedLayout && !settings?.scrolled), {
-      horizontal,
-      vertical,
-    });
+    setMousePanArmed(
+      bookKey,
+      Boolean(isFixedLayoutView(view, data?.isFixedLayout) && !settings?.scrolled),
+      { horizontal, vertical },
+    );
     return () => {
       mousePanRef.current = null;
       setMousePanArmed(bookKey, false);
@@ -275,6 +284,7 @@ export const usePagination = (
     screenX?: number;
     screenY?: number;
     hasTextSelection?: boolean;
+    rawPanHandled?: boolean;
     preventDefault?: () => void;
   };
 
@@ -306,7 +316,7 @@ export const usePagination = (
         mousePanRef.current = null;
         setMousePanClaimed(bookKey, false);
         const canTrack = Boolean(
-          data?.isFixedLayout &&
+          isFixedLayoutView(view, data?.isFixedLayout) &&
             !settings?.scrolled &&
             event.button === 0 &&
             !event.hasTextSelection,
@@ -338,7 +348,7 @@ export const usePagination = (
       }
       const horizontalPan = hasHorizontalPanning(view, settings);
       const verticalPan = hasVerticalPanning(view, settings);
-      if (!data?.isFixedLayout || settings?.scrolled) {
+      if (!isFixedLayoutView(view, data?.isFixedLayout) || settings?.scrolled) {
         mousePanRef.current = null;
         setMousePanArmed(bookKey, false);
         setMousePanClaimed(bookKey, false);
@@ -368,7 +378,11 @@ export const usePagination = (
       const dy = event.screenY - state.lastY;
       state.lastX = event.screenX;
       state.lastY = event.screenY;
-      view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);
+      // Raw iframe moves pan the foliate-fxl host synchronously. Parent-window
+      // moves (pointer left the iframe) still use view.pan as the continuation.
+      if (!event.rawPanHandled) {
+        view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);
+      }
       event.preventDefault?.();
       return true;
     },
