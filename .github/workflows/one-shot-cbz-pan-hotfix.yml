@@ -111,7 +111,7 @@ jobs:
 
       - name: run CBZ mouse-pan regression test
         timeout-minutes: 3
-        run: pnpm --filter @readest/readest-app exec vitest run src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+        run: pnpm --filter @readest/readest-app exec dotenv -e .env -- vitest run src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
 
       - name: prepare frontend vendors
         run: pnpm --filter @readest/readest-app setup-vendors
