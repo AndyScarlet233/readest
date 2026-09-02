@@ -1,0 +1,27 @@
+name: Repair CBZ helper
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-cbz-helper.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Repair and self-remove
+        run: |
+          sed -i '/^[[:space:]]*version: 10$/d' .github/workflows/one-shot-cbz-page-drag.yml
+          rm .github/workflows/repair-cbz-helper.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "chore: repair CBZ drag helper"
+          git push origin HEAD:main
