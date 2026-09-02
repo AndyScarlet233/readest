@@ -49,123 +49,138 @@ jobs:
           replace_once(
               rust,
               'const MAX_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;',
-              '''// Native downloads stream to disk, so the old 2 GiB ceiling rejected valid large
-// AZW3/PDF/CBZ files even though neither reqwest nor the filesystem needs them in RAM.
-// Keep a finite sanity limit, but leave enough headroom for omnibus/reference books.
-const MAX_DOWNLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;''',
+              '\n'.join([
+                  '// Native downloads stream to disk, so the old 2 GiB ceiling rejected valid large',
+                  '// AZW3/PDF/CBZ files even though neither reqwest nor the filesystem needs them in RAM.',
+                  '// Keep a finite sanity limit, but leave enough headroom for omnibus/reference books.',
+                  'const MAX_DOWNLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;',
+              ]),
           )
 
           replace_once(
               storage,
-              '''        skipSslVerification,
-      );''',
-              '''        skipSslVerification,
-        { resume: true },
-      );''',
+              '\n'.join(['        skipSslVerification,', '      );']),
+              '\n'.join(['        skipSslVerification,', '        { resume: true },', '      );']),
           )
 
           replace_once(
               webdav,
-              '''        await tauriDownload(url, localPath, onProgress, authHeaders());
-        return true;
-      } catch (e) {
-        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);
-        return false;
-      }''',
-              '''        await tauriDownload(
-          url,
-          localPath,
-          onProgress,
-          authHeaders(),
-          undefined,
-          undefined,
-          undefined,
-          { resume: true },
-        );
-        return true;
-      } catch (e) {
-        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);
-        throw mapError(e);
-      }''',
+              '\n'.join([
+                  '        await tauriDownload(url, localPath, onProgress, authHeaders());',
+                  '        return true;',
+                  '      } catch (e) {',
+                  "        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);",
+                  '        return false;',
+                  '      }',
+              ]),
+              '\n'.join([
+                  '        await tauriDownload(',
+                  '          url,',
+                  '          localPath,',
+                  '          onProgress,',
+                  '          authHeaders(),',
+                  '          undefined,',
+                  '          undefined,',
+                  '          undefined,',
+                  '          { resume: true },',
+                  '        );',
+                  '        return true;',
+                  '      } catch (e) {',
+                  "        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);",
+                  '        throw mapError(e);',
+                  '      }',
+              ]),
           )
 
           replace_once(
               gdrive,
-              '''      await tauriDownload(mediaDownloadUrl(fileId), localPath, onProgress, {
-        Authorization: `Bearer ${token}`,
-      });
-      return true;
-    } catch (e) {
-      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);
-      return false;
-    }''',
-              '''      await tauriDownload(
-        mediaDownloadUrl(fileId),
-        localPath,
-        onProgress,
-        { Authorization: `Bearer ${token}` },
-        undefined,
-        undefined,
-        undefined,
-        { resume: true },
-      );
-      return true;
-    } catch (e) {
-      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);
-      throw mapDriveError(e);
-    }''',
+              '\n'.join([
+                  '      await tauriDownload(mediaDownloadUrl(fileId), localPath, onProgress, {',
+                  '        Authorization: `Bearer ${token}`,',
+                  '      });',
+                  '      return true;',
+                  '    } catch (e) {',
+                  "      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);",
+                  '      return false;',
+                  '    }',
+              ]),
+              '\n'.join([
+                  '      await tauriDownload(',
+                  '        mediaDownloadUrl(fileId),',
+                  '        localPath,',
+                  '        onProgress,',
+                  '        { Authorization: `Bearer ${token}` },',
+                  '        undefined,',
+                  '        undefined,',
+                  '        undefined,',
+                  '        { resume: true },',
+                  '      );',
+                  '      return true;',
+                  '    } catch (e) {',
+                  "      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);",
+                  '      throw mapDriveError(e);',
+                  '    }',
+              ]),
           )
 
           replace_once(
               onedrive,
-              '''      await tauriDownload(contentUrl(remotePath), localPath, onProgress, {
-        Authorization: `Bearer ${token}`,
-      });
-      return true;
-    } catch (e) {
-      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);
-      return false;
-    }''',
-              '''      await tauriDownload(
-        contentUrl(remotePath),
-        localPath,
-        onProgress,
-        { Authorization: `Bearer ${token}` },
-        undefined,
-        undefined,
-        undefined,
-        { resume: true },
-      );
-      return true;
-    } catch (e) {
-      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);
-      throw mapGraphError(e);
-    }''',
+              '\n'.join([
+                  '      await tauriDownload(contentUrl(remotePath), localPath, onProgress, {',
+                  '        Authorization: `Bearer ${token}`,',
+                  '      });',
+                  '      return true;',
+                  '    } catch (e) {',
+                  "      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);",
+                  '      return false;',
+                  '    }',
+              ]),
+              '\n'.join([
+                  '      await tauriDownload(',
+                  '        contentUrl(remotePath),',
+                  '        localPath,',
+                  '        onProgress,',
+                  '        { Authorization: `Bearer ${token}` },',
+                  '        undefined,',
+                  '        undefined,',
+                  '        undefined,',
+                  '        { resume: true },',
+                  '      );',
+                  '      return true;',
+                  '    } catch (e) {',
+                  "      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);",
+                  '      throw mapGraphError(e);',
+                  '    }',
+              ]),
           )
 
           replace_once(
               s3,
-              '''      await tauriDownload(url, localPath, onProgress);
-      return true;
-    } catch (e) {
-      console.warn('S3Provider.downloadStream failed', remotePath, e);
-      return false;
-    }''',
-              '''      await tauriDownload(
-        url,
-        localPath,
-        onProgress,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        { resume: true },
-      );
-      return true;
-    } catch (e) {
-      console.warn('S3Provider.downloadStream failed', remotePath, e);
-      throw mapS3Error(e);
-    }''',
+              '\n'.join([
+                  '      await tauriDownload(url, localPath, onProgress);',
+                  '      return true;',
+                  '    } catch (e) {',
+                  "      console.warn('S3Provider.downloadStream failed', remotePath, e);",
+                  '      return false;',
+                  '    }',
+              ]),
+              '\n'.join([
+                  '      await tauriDownload(',
+                  '        url,',
+                  '        localPath,',
+                  '        onProgress,',
+                  '        undefined,',
+                  '        undefined,',
+                  '        undefined,',
+                  '        undefined,',
+                  '        { resume: true },',
+                  '      );',
+                  '      return true;',
+                  '    } catch (e) {',
+                  "      console.warn('S3Provider.downloadStream failed', remotePath, e);",
+                  '      throw mapS3Error(e);',
+                  '    }',
+              ]),
           )
           PY
 
