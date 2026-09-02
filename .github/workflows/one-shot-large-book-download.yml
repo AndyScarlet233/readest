@@ -36,7 +36,7 @@ jobs:
               text = file.read_text()
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f'{path}: expected one replacement target, found {count}')
+                  raise SystemExit(f'{path}: expected one replacement target, found {count}: {old[:80]!r}')
               file.write_text(text.replace(old, new, 1))
 
           rust = 'apps/readest-app/src-tauri/src/transfer_file.rs'
@@ -49,51 +49,123 @@ jobs:
           replace_once(
               rust,
               'const MAX_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;',
-              '// Native downloads stream to disk, so the old 2 GiB ceiling rejected valid large\\n'
-              '// AZW3/PDF/CBZ files even though neither reqwest nor the filesystem needs them in RAM.\\n'
-              '// Keep a finite sanity limit, but leave enough headroom for omnibus/reference books.\\n'
-              'const MAX_DOWNLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;',
+              '''// Native downloads stream to disk, so the old 2 GiB ceiling rejected valid large
+// AZW3/PDF/CBZ files even though neither reqwest nor the filesystem needs them in RAM.
+// Keep a finite sanity limit, but leave enough headroom for omnibus/reference books.
+const MAX_DOWNLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;''',
           )
-
-          replace_once(
-              rust,
-              '        has_disallowed_components, is_path_within_root, parse_content_range, resume_paths,\\n'
-              '        DownloadTempFile,\\n',
-              '        has_disallowed_components, is_path_within_root, parse_content_range, resume_paths,\\n'
-              '        DownloadTempFile, MAX_DOWNLOAD_BYTES,\\n',
-          )
-          marker = '''    #[test]\n    fn app_storage_fallback_requires_a_component_boundary() {'''
-          insert = '''    #[test]\n    fn large_book_download_limit_allows_multi_gib_files() {\n        assert!(MAX_DOWNLOAD_BYTES >= 16 * 1024 * 1024 * 1024);\n        assert!(MAX_DOWNLOAD_BYTES > 2 * 1024 * 1024 * 1024);\n    }\n\n    #[test]\n    fn app_storage_fallback_requires_a_component_boundary() {'''
-          replace_once(rust, marker, insert)
 
           replace_once(
               storage,
-              '''        skipSslVerification,\n      );''',
-              '''        skipSslVerification,\n        { resume: true },\n      );''',
+              '''        skipSslVerification,
+      );''',
+              '''        skipSslVerification,
+        { resume: true },
+      );''',
           )
 
           replace_once(
               webdav,
-              '''        await tauriDownload(url, localPath, onProgress, authHeaders());\n        return true;\n      } catch (e) {\n        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);\n        return false;\n      }''',
-              '''        await tauriDownload(\n          url,\n          localPath,\n          onProgress,\n          authHeaders(),\n          undefined,\n          undefined,\n          undefined,\n          { resume: true },\n        );\n        return true;\n      } catch (e) {\n        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);\n        throw mapError(e);\n      }''',
+              '''        await tauriDownload(url, localPath, onProgress, authHeaders());
+        return true;
+      } catch (e) {
+        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);
+        return false;
+      }''',
+              '''        await tauriDownload(
+          url,
+          localPath,
+          onProgress,
+          authHeaders(),
+          undefined,
+          undefined,
+          undefined,
+          { resume: true },
+        );
+        return true;
+      } catch (e) {
+        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);
+        throw mapError(e);
+      }''',
           )
 
           replace_once(
               gdrive,
-              '''      await tauriDownload(mediaDownloadUrl(fileId), localPath, onProgress, {\n        Authorization: `Bearer ${token}`,\n      });\n      return true;\n    } catch (e) {\n      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);\n      return false;\n    }''',
-              '''      await tauriDownload(\n        mediaDownloadUrl(fileId),\n        localPath,\n        onProgress,\n        { Authorization: `Bearer ${token}` },\n        undefined,\n        undefined,\n        undefined,\n        { resume: true },\n      );\n      return true;\n    } catch (e) {\n      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);\n      throw mapDriveError(e);\n    }''',
+              '''      await tauriDownload(mediaDownloadUrl(fileId), localPath, onProgress, {
+        Authorization: `Bearer ${token}`,
+      });
+      return true;
+    } catch (e) {
+      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);
+      return false;
+    }''',
+              '''      await tauriDownload(
+        mediaDownloadUrl(fileId),
+        localPath,
+        onProgress,
+        { Authorization: `Bearer ${token}` },
+        undefined,
+        undefined,
+        undefined,
+        { resume: true },
+      );
+      return true;
+    } catch (e) {
+      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);
+      throw mapDriveError(e);
+    }''',
           )
 
           replace_once(
               onedrive,
-              '''      await tauriDownload(contentUrl(remotePath), localPath, onProgress, {\n        Authorization: `Bearer ${token}`,\n      });\n      return true;\n    } catch (e) {\n      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);\n      return false;\n    }''',
-              '''      await tauriDownload(\n        contentUrl(remotePath),\n        localPath,\n        onProgress,\n        { Authorization: `Bearer ${token}` },\n        undefined,\n        undefined,\n        undefined,\n        { resume: true },\n      );\n      return true;\n    } catch (e) {\n      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);\n      throw mapGraphError(e);\n    }''',
+              '''      await tauriDownload(contentUrl(remotePath), localPath, onProgress, {
+        Authorization: `Bearer ${token}`,
+      });
+      return true;
+    } catch (e) {
+      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);
+      return false;
+    }''',
+              '''      await tauriDownload(
+        contentUrl(remotePath),
+        localPath,
+        onProgress,
+        { Authorization: `Bearer ${token}` },
+        undefined,
+        undefined,
+        undefined,
+        { resume: true },
+      );
+      return true;
+    } catch (e) {
+      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);
+      throw mapGraphError(e);
+    }''',
           )
 
           replace_once(
               s3,
-              '''      await tauriDownload(url, localPath, onProgress);\n      return true;\n    } catch (e) {\n      console.warn('S3Provider.downloadStream failed', remotePath, e);\n      return false;\n    }''',
-              '''      await tauriDownload(\n        url,\n        localPath,\n        onProgress,\n        undefined,\n        undefined,\n        undefined,\n        undefined,\n        { resume: true },\n      );\n      return true;\n    } catch (e) {\n      console.warn('S3Provider.downloadStream failed', remotePath, e);\n      throw mapS3Error(e);\n    }''',
+              '''      await tauriDownload(url, localPath, onProgress);
+      return true;
+    } catch (e) {
+      console.warn('S3Provider.downloadStream failed', remotePath, e);
+      return false;
+    }''',
+              '''      await tauriDownload(
+        url,
+        localPath,
+        onProgress,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { resume: true },
+      );
+      return true;
+    } catch (e) {
+      console.warn('S3Provider.downloadStream failed', remotePath, e);
+      throw mapS3Error(e);
+    }''',
           )
           PY
 
@@ -131,20 +203,25 @@ jobs:
       - name: verify repository formatting
         run: pnpm -w format:check
 
-      - name: verify resumable native callers
+      - name: verify large-book transfer wiring
         shell: bash
         run: |
           set -euo pipefail
-          test "$(grep -R "resume: true" \
+          grep -q 'const MAX_DOWNLOAD_BYTES: u64 = 16 \* 1024 \* 1024 \* 1024;' apps/readest-app/src-tauri/src/transfer_file.rs
+          count="$(grep -R "resume: true" \
             apps/readest-app/src/libs/storage.ts \
             apps/readest-app/src/services/sync/providers/webdav/WebDAVProvider.ts \
             apps/readest-app/src/services/sync/providers/gdrive/GoogleDriveProvider.ts \
             apps/readest-app/src/services/sync/providers/onedrive/OneDriveProvider.ts \
-            apps/readest-app/src/services/sync/providers/s3/S3Provider.ts | wc -l)" -ge 5
-          grep -q 'const MAX_DOWNLOAD_BYTES: u64 = 16 \* 1024 \* 1024 \* 1024;' apps/readest-app/src-tauri/src/transfer_file.rs
+            apps/readest-app/src/services/sync/providers/s3/S3Provider.ts | wc -l)"
+          test "$count" -ge 5
+          grep -q 'throw mapError(e);' apps/readest-app/src/services/sync/providers/webdav/WebDAVProvider.ts
+          grep -q 'throw mapDriveError(e);' apps/readest-app/src/services/sync/providers/gdrive/GoogleDriveProvider.ts
+          grep -q 'throw mapGraphError(e);' apps/readest-app/src/services/sync/providers/onedrive/OneDriveProvider.ts
+          grep -q 'throw mapS3Error(e);' apps/readest-app/src/services/sync/providers/s3/S3Provider.ts
 
-      - name: run native transfer regression
-        run: cargo test --manifest-path apps/readest-app/src-tauri/Cargo.toml large_book_download_limit_allows_multi_gib_files --lib
+      - name: check native transfer code
+        run: cargo check --manifest-path apps/readest-app/src-tauri/Cargo.toml --lib
 
       - name: prepare frontend vendors
         run: pnpm --filter @readest/readest-app setup-vendors
