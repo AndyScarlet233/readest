@@ -15,6 +15,16 @@ async function processInBatches<T>(
   }
 }
 
+/**
+ * Backfill the sort clock for library rows written before `updatedAt` existed.
+ * Loading a library is a read operation, so the fallback must be deterministic:
+ * using Date.now() here made an untouched legacy book look freshly updated on
+ * every reload and therefore jump to the front of the default Updated-desc sort.
+ */
+export const resolveLibraryUpdatedAt = (
+  book: Pick<Book, 'updatedAt' | 'lastUpdated' | 'createdAt'>,
+): number => book.updatedAt ?? book.lastUpdated ?? book.createdAt ?? 0;
+
 export async function loadLibraryBooks(
   fs: FileSystem,
   generateCoverImageUrl: (book: Book) => Promise<string>,
@@ -29,7 +39,7 @@ export async function loadLibraryBooks(
 
   await processInBatches(books, COVER_CONCURRENCY, async (book) => {
     book.coverImageUrl = await generateCoverImageUrl(book);
-    book.updatedAt ??= book.lastUpdated || Date.now();
+    book.updatedAt = resolveLibraryUpdatedAt(book);
   });
 
   return books;
