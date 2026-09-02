@@ -1,0 +1,72 @@
+name: 临时上游同步审计
+
+on:
+  push:
+    branches:
+      - sync-upstream-2026-09-02
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch upstream and resolution branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch upstream main
+          git fetch origin sync-upstream-2026-09-02
+          echo "fork_main=$(git rev-parse origin/main)"
+          echo "upstream_main=$(git rev-parse upstream/main)"
+          echo "resolution_branch=$(git rev-parse origin/sync-upstream-2026-09-02)"
+
+      - name: Remove obsolete temporary sync branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          for branch in \
+            sync-upstream-2026-09-02-actual \
+            sync-upstream-2026-09-02-final \
+            sync-upstream-2026-09-02-last \
+            sync-upstream-2026-09-02-merge \
+            sync-upstream-2026-09-02-pr \
+            sync-upstream-2026-09-02-ready \
+            sync-upstream-2026-09-02-review \
+            sync-upstream-2026-09-02-x \
+            sync-upstream-2026-09-02-y \
+            sync-upstream-2026-09-02-z
+          do
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              git push origin --delete "$branch"
+            fi
+          done
+
+      - name: Dry-run merge and list real conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B upstream-sync-audit origin/main
+          set +e
+          git merge --no-ff --no-commit upstream/main
+          merge_status=$?
+          set -e
+          echo "merge_status=$merge_status"
+          echo "--- unresolved paths ---"
+          git diff --name-only --diff-filter=U | tee /tmp/upstream-sync-conflicts.txt
+          echo "--- conflict count ---"
+          wc -l < /tmp/upstream-sync-conflicts.txt
+          echo "--- files changed by automatic merge ---"
+          git status --short
+          git merge --abort || true
