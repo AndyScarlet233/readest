@@ -197,6 +197,7 @@
         }
       ]
     },
+    "barcode-scanner:default",
     "biometric:default",
     "haptics:allow-vibrate",
     "haptics:allow-impact-feedback",
@@ -245,10 +246,13 @@
     "allow-localsend-get-status",
     "allow-localsend-list-devices",
     "allow-localsend-announce",
-    "allow-localsend-set-discoverable",
     "allow-localsend-respond",
     "allow-localsend-cancel-receive",
     "allow-localsend-send-files",
-    "allow-localsend-cancel-send"
+    "allow-localsend-cancel-send",
+    "allow-lan-sync-start",
+    "allow-lan-sync-discover",
+    "allow-lan-sync-stop",
+    "allow-lan-sync-status"
   ]
 }

@@ -47,6 +47,7 @@ import Spinner from '@/components/Spinner';
 import SideBar from './sidebar/SideBar';
 import Notebook from './notebook/Notebook';
 import LocalSendManager from '@/components/localsend/LocalSendManager';
+import LanSyncManager from '@/components/lan/LanSyncManager';
 import BooksGrid from './BooksGrid';
 import SettingsDialog from '@/components/settings/SettingsDialog';
 import AudiobookPairingDialog from './audiobook/AudiobookPairingDialog';
@@ -89,14 +90,11 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
 
   useBookShortcuts({ sideBarBookKey, bookKeys });
   const isAndroidApp = appService?.isAndroidApp === true;
-  // Settings > Behavior > Device > Gamepad Support. Off when the device's own
-  // remapper already binds the controller to keys (issue #5979).
-  const gamepadEnabled = useSettingsStore((state) => state.settings.gamepadEnabled) !== false;
-  const androidGamepadConnected = useAndroidGamepadConnection(isAndroidApp && gamepadEnabled);
+  const androidGamepadConnected = useAndroidGamepadConnection(isAndroidApp);
   // Android's native bridge gates the Web Gamepad API so Chromium polls only
   // while a controller exists. Other platforms retain the existing behavior.
   useGamepad({
-    enabled: appService !== null && gamepadEnabled && (!isAndroidApp || androidGamepadConnected),
+    enabled: appService !== null && (!isAndroidApp || androidGamepadConnected),
   });
 
   useEffect(() => {
@@ -421,6 +419,7 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
       )}
       <Notebook />
       <LocalSendManager />
+      <LanSyncManager />
       {showDetailsBook && (
         <BookDetailModal
           isOpen={!!showDetailsBook}

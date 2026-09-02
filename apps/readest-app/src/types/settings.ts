@@ -203,6 +203,33 @@ export interface WebDAVSettings {
 }
 
 /**
+ * LAN peer sync settings (fork backend 'lan'). Progress, notes and config
+ * sync with another Readest device on the same home network through the axum
+ * peer server each app embeds (src-tauri/src/lan_sync). Shape mirrors
+ * {@link WebDAVSettings} minus the cloud-specific fields; `lan` sits outside
+ * the cloud plan, so it is exempt from the free-plan sync pause. An empty
+ * token means direct LAN access; a non-empty token enables Bearer protection.
+ */
+export interface LanSyncSettings {
+  enabled: boolean;
+  /** Peer address, host only ("192.168.1.5"); the port travels separately. */
+  host: string;
+  /** TCP port of the PEER's lan_sync server (this device serves on its own port). */
+  port: number;
+  /** Shared pairing token; identical on both devices, exchanged via the pairing form. */
+  token: string;
+  syncProgress?: boolean;
+  syncNotes?: boolean;
+  syncBooks?: boolean;
+  fullSync?: boolean;
+  // Conflict policy — same vocabulary as KOSync/WebDAV.
+  strategy?: KOSyncStrategy;
+  deviceId?: string;
+  lastSyncedAt?: number;
+  providerSelectedAt?: number;
+}
+
+/**
  * Google Drive file-sync settings. A second file-sync backend alongside
  * {@link WebDAVSettings}, sharing the same engine, sub-toggles, and strategy
  * vocabulary. Drive has no URL / credentials / root path (it is OAuth + a
@@ -431,13 +458,6 @@ export interface SystemSettings {
   autoScreenBrightness: boolean;
   swipeBrightnessGesture: boolean;
   hardwarePageTurner: HardwarePageTurnerSettings;
-  /**
-   * Replay a connected controller's buttons and sticks as key events in the
-   * reader. Off is a real need on handhelds whose own remapper (Steam Input on
-   * the Steam Deck) already binds those buttons to keys, so every press would
-   * otherwise land twice (issue #5979).
-   */
-  gamepadEnabled: boolean;
   alwaysShowStatusBar: boolean;
   openLastBooks: boolean;
   lastOpenBooks: string[];
@@ -531,6 +551,8 @@ export interface SystemSettings {
   s3: S3Settings;
   onedrive: OneDriveSettings;
   icloud: ICloudSettings;
+  /** Fork backend: LAN peer sync (services/sync/providers/lan). Non-optional like its siblings; treated as possibly-absent at runtime. */
+  lan: LanSyncSettings;
 
   aiSettings: AISettings;
   /**

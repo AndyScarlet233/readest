@@ -1,30 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { impactFeedback } from '@tauri-apps/plugin-haptics';
 import { useEnv } from '@/context/EnvContext';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useQuotaStats } from '@/hooks/useQuotaStats';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useLocalSendStore } from '@/store/localsendStore';
 import { isTauriAppPlatform } from '@/services/environment';
 import { ingestFile } from '@/services/ingestService';
-import { isNearbyPairingAllowed } from '@/utils/access';
-import {
-  DEFAULT_ALIAS_NAMED_KEY,
-  getLocalSendAlias,
-  isLocalSendEnabled,
-} from '@/services/localsend/devicePrefs';
-import {
-  addPairedDevice,
-  canAutoAccept,
-  refreshPairedDevice,
-} from '@/services/localsend/pairedDevices';
-import { playTransferCue, primeTransferCues } from '@/services/localsend/sounds';
+import { getLocalSendAlias, isLocalSendEnabled } from '@/services/localsend/devicePrefs';
 import {
   cancelLocalSendReceive,
   respondLocalSend,
-  setLocalSendDiscoverable,
   startLocalSend,
   stopLocalSend,
 } from '@/services/localsend/service';
@@ -42,7 +28,7 @@ import {
   type LocalSendDevice,
 } from '@/services/localsend/types';
 import { eventDispatcher } from '@/utils/event';
-import { setMulticastLock } from '@/utils/bridge';
+import { setPersistentMulticastLock } from '@/utils/bridge';
 import { resolveBookSendFile } from '@/services/localsend/bookFile';
 import type { Book } from '@/types/book';
 import DevicePickerDialog from './DevicePickerDialog';
@@ -53,6 +39,8 @@ interface ServerStatePayload {
   port: number;
   error: string | null;
 }
+
+let localSendServiceStateQueue: Promise<void> = Promise.resolve();
 
 /**
  * Background controller for the LocalSend integration. Mounted in the library
@@ -70,18 +58,9 @@ const LocalSendManager: React.FC = () => {
   const { user } = useAuth();
   const userRef = useRef(user);
   userRef.current = user;
-  // Read the translator at call time so the default alias localizes without
-  // rebuilding `defaultAlias` (and restarting the service) on every render.
-  const translateRef = useRef(_);
-  translateRef.current = _;
 
   const pendingRequest = useLocalSendStore((state) => state.pendingRequest);
   const [sendFiles, setSendFiles] = useState<SendFileInput[] | null>(null);
-
-  // Pairing entitlement, checked at receive time so a lapsed plan brings the
-  // confirmation dialogs back while the pairing records stay intact.
-  const { userProfilePlan, customizationPurchased } = useQuotaStats();
-  const pairingEntitled = isNearbyPairingAllowed(userProfilePlan ?? 'free', customizationPurchased);
 
   const toast = useCallback(
     (message: string, type: 'info' | 'error' | 'success' | 'warning' = 'info') =>
@@ -89,39 +68,7 @@ const LocalSendManager: React.FC = () => {
     [],
   );
 
-  const cueOpts = useCallback(
-    () => ({ eink: !!useSettingsStore.getState().settings?.globalViewSettings?.isEink }),
-    [],
-  );
-
-  const haptic = useCallback(() => {
-    if (!appService?.hasHaptics) return;
-    try {
-      void impactFeedback('medium').catch(() => {});
-    } catch {
-      /* haptics are best-effort */
-    }
-  }, [appService]);
-
-  // Webview autoplay policies block sounds that fire without a user gesture
-  // (transfer complete, auto-accepted receives); unlock the cue elements on
-  // the first gesture. A session with no gesture at all degrades to
-  // toast + haptic, which is the accepted floor.
-  useEffect(() => {
-    if (!isTauriAppPlatform()) return;
-    const prime = () => primeTransferCues();
-    window.addEventListener('pointerdown', prime, { once: true });
-    return () => window.removeEventListener('pointerdown', prime);
-  }, []);
-
   const defaultAlias = useCallback(async (): Promise<string> => {
-    // Prefer the signed-in user's name, AirDrop style: "<name>'s Readest".
-    // Match the library main menu ("Logged in as {{name}}"): first name only.
-    const fullName: unknown = userRef.current?.user_metadata?.['full_name'];
-    if (typeof fullName === 'string' && fullName.trim()) {
-      const name = fullName.trim().split(' ')[0];
-      return translateRef.current(DEFAULT_ALIAS_NAMED_KEY, { name });
-    }
     try {
       const { hostname } = await import('@tauri-apps/plugin-os');
       const name = await hostname();
@@ -134,29 +81,59 @@ const LocalSendManager: React.FC = () => {
 
   // Service lifecycle: match the running state to the per-device preference.
   // The service intentionally survives unmounts (route changes); only the
-  // preference toggle stops it.
-  const syncServiceState = useCallback(async () => {
-    if (!isTauriAppPlatform() || !appService) return;
-    try {
-      if (isLocalSendEnabled()) {
-        if (appService.isAndroidApp) await setMulticastLock(true).catch(() => {});
-        const alias = getLocalSendAlias() || (await defaultAlias());
-        // Tauri reports iPad and iPhone both as `ios`; split on the shorter
-        // screen edge (iPads are >= 600pt, all iPhones are narrower).
-        const isTablet =
-          typeof screen !== 'undefined' && Math.min(screen.width, screen.height) >= 600;
-        const deviceModel = localSendDeviceModel(appService.osPlatform, isTablet);
-        const status = await startLocalSend(alias, deviceModel);
-        useLocalSendStore.getState().setStatus(status);
-      } else {
-        await stopLocalSend();
-        if (appService.isAndroidApp) await setMulticastLock(false).catch(() => {});
-        useLocalSendStore.getState().setStatus(null);
-      }
-    } catch (err) {
-      console.error('LocalSend service state change failed:', err);
-    }
-  }, [appService, defaultAlias]);
+  // preference toggle stops it. Queue the whole transition so a stale
+  // enable/disable event cannot reorder the shared Android lock owner.
+  const syncServiceState = useCallback(
+    async (restart = false) => {
+      const previous = localSendServiceStateQueue;
+      const operation = previous.then(async () => {
+        if (!isTauriAppPlatform() || !appService) return;
+        let multicastLockAcquired = false;
+        try {
+          const enabled = isLocalSendEnabled();
+          if (restart && enabled) {
+            try {
+              await stopLocalSend();
+            } catch {
+              /* it may not have been running */
+            }
+          }
+
+          if (enabled) {
+            await setPersistentMulticastLock(appService.isAndroidApp, 'localsend');
+            multicastLockAcquired = appService.isAndroidApp;
+            const alias = getLocalSendAlias() || (await defaultAlias());
+            // Tauri reports iPad and iPhone both as `ios`; split on the shorter
+            // screen edge (iPads are >= 600pt, all iPhones are narrower).
+            const isTablet =
+              typeof screen !== 'undefined' && Math.min(screen.width, screen.height) >= 600;
+            const deviceModel = localSendDeviceModel(appService.osPlatform, isTablet);
+            const status = await startLocalSend(alias, deviceModel);
+            useLocalSendStore.getState().setStatus(status);
+          } else {
+            try {
+              await stopLocalSend();
+            } catch {
+              /* it may not have been running */
+            }
+            await setPersistentMulticastLock(false, 'localsend');
+            useLocalSendStore.getState().setStatus(null);
+          }
+        } catch (err) {
+          if (multicastLockAcquired) {
+            await setPersistentMulticastLock(false, 'localsend').catch(() => {});
+          }
+          console.error('LocalSend service state change failed:', err);
+        }
+      });
+      localSendServiceStateQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [appService, defaultAlias],
+  );
 
   useEffect(() => {
     void syncServiceState();
@@ -165,41 +142,12 @@ const LocalSendManager: React.FC = () => {
     return () => eventDispatcher.off('localsend-prefs-changed', onPrefsChanged);
   }, [syncServiceState]);
 
-  // AirDrop-style presence: this device is discoverable only while its screen
-  // is on and Readest is in the foreground. Locking the screen or backgrounding
-  // the app fires `visibilitychange` -> hidden (on both mobile and desktop),
-  // so we stop answering announcements and peers drop us from their pickers
-  // within a few seconds; returning to the foreground re-announces us at once.
-  // This is presence only - the service keeps running, nothing disconnects.
-  useEffect(() => {
-    if (!isTauriAppPlatform()) return;
-    const sync = () => {
-      if (!isLocalSendEnabled()) return;
-      const visible = document.visibilityState === 'visible';
-      // The OS can reclaim a backgrounded app's listening socket (iOS); the
-      // backend tears the dead service down and reports running:false. Bring it
-      // back on the next foreground before re-announcing presence.
-      if (visible && !useLocalSendStore.getState().status?.running) {
-        void syncServiceState();
-        return;
-      }
-      void setLocalSendDiscoverable(visible).catch(() => {});
-    };
-    document.addEventListener('visibilitychange', sync);
-    return () => document.removeEventListener('visibilitychange', sync);
-  }, [syncServiceState]);
-
   // The alias change flow restarts the service (stop, then start with the new
   // alias). The settings form dispatches 'localsend-alias-changed' for this.
   useEffect(() => {
-    const onAliasChanged = async () => {
+    const onAliasChanged = () => {
       if (!isTauriAppPlatform() || !isLocalSendEnabled()) return;
-      try {
-        await stopLocalSend();
-      } catch {
-        /* it may not have been running */
-      }
-      void syncServiceState();
+      void syncServiceState(true);
     };
     eventDispatcher.on('localsend-alias-changed', onAliasChanged);
     return () => eventDispatcher.off('localsend-alias-changed', onAliasChanged);
@@ -308,8 +256,6 @@ const LocalSendManager: React.FC = () => {
           if (reason === 'cancelled') {
             toast(_('Transfer from {{alias}} cancelled', { alias: owned.alias }));
           } else if (failed > 0) {
-            playTransferCue('fail', cueOpts());
-            haptic();
             toast(
               _('Received {{count}} book(s) from {{alias}}, {{failed}} failed', {
                 count: received,
@@ -319,8 +265,6 @@ const LocalSendManager: React.FC = () => {
               'warning',
             );
           } else {
-            playTransferCue('done', cueOpts());
-            haptic();
             toast(
               _('Received {{count}} book(s) from {{alias}}', {
                 count: received,
@@ -363,7 +307,7 @@ const LocalSendManager: React.FC = () => {
         promise.then((unlisten) => unlisten()).catch(() => {});
       });
     };
-  }, [appService, onFileDone, toast, _, cueOpts, haptic]);
+  }, [appService, onFileDone, toast, _]);
 
   // A request with no importable files is declined without a dialog.
   useEffect(() => {
@@ -376,53 +320,18 @@ const LocalSendManager: React.FC = () => {
     toast(_('No supported book files from {{alias}}', { alias: sender.alias }), 'warning');
   }, [pendingRequest, toast, _]);
 
-  // Paired auto-accept: a cert-verified, paired sender skips the dialog.
-  // Every window runs this; the respond call claims the session for exactly
-  // one of them (the same ownership rule as a manual accept).
-  useEffect(() => {
-    if (!pendingRequest) return;
-    const { supported } = partitionSupportedFiles(pendingRequest.files);
-    if (supported.length === 0) return; // the decline effect handles these
-    const { sessionId, sender } = pendingRequest;
-    if (!canAutoAccept(sender, pairingEntitled)) return;
-    refreshPairedDevice(sender.fingerprint, sender.alias, sender.deviceModel);
-    useLocalSendStore.getState().requestClosed(sessionId);
-    void (async () => {
-      const claimed = await respondLocalSend(
-        sessionId,
-        supported.map((file) => file.id),
-      );
-      if (claimed) {
-        useLocalSendStore.getState().claimSession(sessionId, sender.alias);
-        toast(_('Receiving from paired device {{alias}}', { alias: sender.alias }));
-        playTransferCue('start', cueOpts());
-        haptic();
-      }
-    })();
-  }, [pendingRequest, pairingEntitled, toast, _, cueOpts, haptic]);
-
   if (!isTauriAppPlatform()) return null;
 
   const showRequestDialog =
-    pendingRequest &&
-    partitionSupportedFiles(pendingRequest.files).supported.length > 0 &&
-    // Auto-accepted requests never flash the dialog; the effect above answers.
-    !canAutoAccept(pendingRequest.sender, pairingEntitled);
+    pendingRequest && partitionSupportedFiles(pendingRequest.files).supported.length > 0;
 
   return (
     <>
       {showRequestDialog && (
         <ReceiveRequestDialog
           request={pendingRequest}
-          onAccept={async (fileIds, pairDevice) => {
+          onAccept={async (fileIds) => {
             const { sessionId, sender } = pendingRequest;
-            if (pairDevice && sender.certVerified) {
-              addPairedDevice({
-                fingerprint: sender.fingerprint,
-                alias: sender.alias,
-                deviceModel: sender.deviceModel,
-              });
-            }
             useLocalSendStore.getState().requestClosed(sessionId);
             const claimed = await respondLocalSend(sessionId, fileIds);
             if (claimed) {

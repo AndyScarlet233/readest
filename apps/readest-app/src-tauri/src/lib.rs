@@ -28,6 +28,7 @@ mod dir_scanner;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod discord_rpc;
 mod epub_parser;
+mod lan_sync;
 mod localsend;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -444,11 +445,14 @@ pub fn run() {
             localsend::commands::localsend_get_status,
             localsend::commands::localsend_list_devices,
             localsend::commands::localsend_announce,
-            localsend::commands::localsend_set_discoverable,
             localsend::commands::localsend_respond,
             localsend::commands::localsend_cancel_receive,
             localsend::commands::localsend_send_files,
             localsend::commands::localsend_cancel_send,
+            lan_sync::lan_sync_start,
+            lan_sync::lan_sync_discover,
+            lan_sync::lan_sync_stop,
+            lan_sync::lan_sync_status,
             #[cfg(desktop)]
             spawn_fresh_browser::spawn_fresh_browser,
             nightly_update::verify_update_signature,
@@ -525,6 +529,9 @@ pub fn run() {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     let builder = builder.plugin(tauri_plugin_biometric::init());
 
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+
     #[cfg(feature = "webdriver")]
     let builder = builder.plugin(tauri_plugin_webdriver::init());
 
@@ -550,6 +557,7 @@ pub fn run() {
                 app.manage(discord_client);
             }
             app.manage(localsend::LocalSendState::default());
+            app.manage(lan_sync::LanSyncState::default());
 
             #[cfg(desktop)]
             {
