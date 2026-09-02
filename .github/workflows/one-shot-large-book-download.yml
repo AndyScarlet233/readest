@@ -1,0 +1,169 @@
+name: One-shot large book download hotfix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-shot-large-book-download.yml
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  hotfix:
+    name: 修复大体积书籍下载并启动发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: apply large-book resumable download hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement target, found {count}')
+              file.write_text(text.replace(old, new, 1))
+
+          rust = 'apps/readest-app/src-tauri/src/transfer_file.rs'
+          storage = 'apps/readest-app/src/libs/storage.ts'
+          webdav = 'apps/readest-app/src/services/sync/providers/webdav/WebDAVProvider.ts'
+          gdrive = 'apps/readest-app/src/services/sync/providers/gdrive/GoogleDriveProvider.ts'
+          onedrive = 'apps/readest-app/src/services/sync/providers/onedrive/OneDriveProvider.ts'
+          s3 = 'apps/readest-app/src/services/sync/providers/s3/S3Provider.ts'
+
+          replace_once(
+              rust,
+              'const MAX_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;',
+              '// Native downloads stream to disk, so the old 2 GiB ceiling rejected valid large\\n'
+              '// AZW3/PDF/CBZ files even though neither reqwest nor the filesystem needs them in RAM.\\n'
+              '// Keep a finite sanity limit, but leave enough headroom for omnibus/reference books.\\n'
+              'const MAX_DOWNLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;',
+          )
+
+          replace_once(
+              rust,
+              '        has_disallowed_components, is_path_within_root, parse_content_range, resume_paths,\\n'
+              '        DownloadTempFile,\\n',
+              '        has_disallowed_components, is_path_within_root, parse_content_range, resume_paths,\\n'
+              '        DownloadTempFile, MAX_DOWNLOAD_BYTES,\\n',
+          )
+          marker = '''    #[test]\n    fn app_storage_fallback_requires_a_component_boundary() {'''
+          insert = '''    #[test]\n    fn large_book_download_limit_allows_multi_gib_files() {\n        assert!(MAX_DOWNLOAD_BYTES >= 16 * 1024 * 1024 * 1024);\n        assert!(MAX_DOWNLOAD_BYTES > 2 * 1024 * 1024 * 1024);\n    }\n\n    #[test]\n    fn app_storage_fallback_requires_a_component_boundary() {'''
+          replace_once(rust, marker, insert)
+
+          replace_once(
+              storage,
+              '''        skipSslVerification,\n      );''',
+              '''        skipSslVerification,\n        { resume: true },\n      );''',
+          )
+
+          replace_once(
+              webdav,
+              '''        await tauriDownload(url, localPath, onProgress, authHeaders());\n        return true;\n      } catch (e) {\n        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);\n        return false;\n      }''',
+              '''        await tauriDownload(\n          url,\n          localPath,\n          onProgress,\n          authHeaders(),\n          undefined,\n          undefined,\n          undefined,\n          { resume: true },\n        );\n        return true;\n      } catch (e) {\n        console.warn('WebDAVProvider.downloadStream failed', remotePath, e);\n        throw mapError(e);\n      }''',
+          )
+
+          replace_once(
+              gdrive,
+              '''      await tauriDownload(mediaDownloadUrl(fileId), localPath, onProgress, {\n        Authorization: `Bearer ${token}`,\n      });\n      return true;\n    } catch (e) {\n      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);\n      return false;\n    }''',
+              '''      await tauriDownload(\n        mediaDownloadUrl(fileId),\n        localPath,\n        onProgress,\n        { Authorization: `Bearer ${token}` },\n        undefined,\n        undefined,\n        undefined,\n        { resume: true },\n      );\n      return true;\n    } catch (e) {\n      console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);\n      throw mapDriveError(e);\n    }''',
+          )
+
+          replace_once(
+              onedrive,
+              '''      await tauriDownload(contentUrl(remotePath), localPath, onProgress, {\n        Authorization: `Bearer ${token}`,\n      });\n      return true;\n    } catch (e) {\n      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);\n      return false;\n    }''',
+              '''      await tauriDownload(\n        contentUrl(remotePath),\n        localPath,\n        onProgress,\n        { Authorization: `Bearer ${token}` },\n        undefined,\n        undefined,\n        undefined,\n        { resume: true },\n      );\n      return true;\n    } catch (e) {\n      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);\n      throw mapGraphError(e);\n    }''',
+          )
+
+          replace_once(
+              s3,
+              '''      await tauriDownload(url, localPath, onProgress);\n      return true;\n    } catch (e) {\n      console.warn('S3Provider.downloadStream failed', remotePath, e);\n      return false;\n    }''',
+              '''      await tauriDownload(\n        url,\n        localPath,\n        onProgress,\n        undefined,\n        undefined,\n        undefined,\n        undefined,\n        { resume: true },\n      );\n      return true;\n    } catch (e) {\n      console.warn('S3Provider.downloadStream failed', remotePath, e);\n      throw mapS3Error(e);\n    }''',
+          )
+          PY
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: setup node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          workspaces: apps/readest-app/src-tauri -> target
+          key: large-book-download-hotfix
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: format changed files
+        shell: bash
+        run: |
+          pnpm --filter @readest/readest-app exec biome format --write \
+            src/libs/storage.ts \
+            src/services/sync/providers/webdav/WebDAVProvider.ts \
+            src/services/sync/providers/gdrive/GoogleDriveProvider.ts \
+            src/services/sync/providers/onedrive/OneDriveProvider.ts \
+            src/services/sync/providers/s3/S3Provider.ts
+          cargo fmt --manifest-path apps/readest-app/src-tauri/Cargo.toml
+
+      - name: verify repository formatting
+        run: pnpm -w format:check
+
+      - name: verify resumable native callers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -R "resume: true" \
+            apps/readest-app/src/libs/storage.ts \
+            apps/readest-app/src/services/sync/providers/webdav/WebDAVProvider.ts \
+            apps/readest-app/src/services/sync/providers/gdrive/GoogleDriveProvider.ts \
+            apps/readest-app/src/services/sync/providers/onedrive/OneDriveProvider.ts \
+            apps/readest-app/src/services/sync/providers/s3/S3Provider.ts | wc -l)" -ge 5
+          grep -q 'const MAX_DOWNLOAD_BYTES: u64 = 16 \* 1024 \* 1024 \* 1024;' apps/readest-app/src-tauri/src/transfer_file.rs
+
+      - name: run native transfer regression
+        run: cargo test --manifest-path apps/readest-app/src-tauri/Cargo.toml large_book_download_limit_allows_multi_gib_files --lib
+
+      - name: prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: typecheck frontend
+        run: pnpm --filter @readest/readest-app exec tsc --noEmit
+
+      - name: commit verified hotfix and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/one-shot-large-book-download.yml
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(sync): resume multi-gigabyte book downloads'
+          HUSKY=0 git push origin HEAD:main
+
+      - name: dispatch formal v0.12.6.21 release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --ref main -f tag=v0.12.6.21
