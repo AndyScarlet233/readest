@@ -110,7 +110,8 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: run CBZ mouse-pan regression test
-        run: pnpm --filter @readest/readest-app test -- --run src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+        timeout-minutes: 3
+        run: pnpm --filter @readest/readest-app exec vitest run src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
 
       - name: prepare frontend vendors
         run: pnpm --filter @readest/readest-app setup-vendors
