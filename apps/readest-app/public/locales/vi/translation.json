@@ -2241,5 +2241,6 @@
   "{{name}}'s Readest": "Readest của {{name}}",
   "Gamepad Support": "Hỗ trợ tay cầm chơi game",
   "Navigate with a connected controller": "Điều hướng bằng tay cầm đã kết nối",
-  "Lock Horizontal Panning": "Khóa di chuyển ngang"
+  "Lock Horizontal Panning": "Khóa di chuyển ngang",
+  "BookOrbit Sync": "Đồng bộ BookOrbit"
 }

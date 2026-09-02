@@ -2541,5 +2541,6 @@
   "{{name}}'s Readest": "Readest الخاص بـ {{name}}",
   "Gamepad Support": "دعم ذراع الألعاب",
   "Navigate with a connected controller": "التنقل باستخدام ذراع ألعاب متصل",
-  "Lock Horizontal Panning": "قفل التحريك الأفقي"
+  "Lock Horizontal Panning": "قفل التحريك الأفقي",
+  "BookOrbit Sync": "مزامنة BookOrbit"
 }

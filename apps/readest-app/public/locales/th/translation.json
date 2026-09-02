@@ -2241,5 +2241,6 @@
   "{{name}}'s Readest": "Readest ของ {{name}}",
   "Gamepad Support": "รองรับเกมแพด",
   "Navigate with a connected controller": "นำทางด้วยคอนโทรลเลอร์ที่เชื่อมต่อ",
-  "Lock Horizontal Panning": "ล็อคการเลื่อนแนวนอน"
+  "Lock Horizontal Panning": "ล็อคการเลื่อนแนวนอน",
+  "BookOrbit Sync": "การซิงค์ BookOrbit"
 }

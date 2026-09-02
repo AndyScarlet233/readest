@@ -2301,5 +2301,6 @@
   "{{name}}'s Readest": "Readest van {{name}}",
   "Gamepad Support": "Gamepad-ondersteuning",
   "Navigate with a connected controller": "Navigeren met een aangesloten controller",
-  "Lock Horizontal Panning": "Horizontaal verschuiven vergrendelen"
+  "Lock Horizontal Panning": "Horizontaal verschuiven vergrendelen",
+  "BookOrbit Sync": "BookOrbit-synchronisatie"
 }

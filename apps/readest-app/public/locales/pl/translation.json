@@ -2421,5 +2421,6 @@
   "{{name}}'s Readest": "Readest użytkownika {{name}}",
   "Gamepad Support": "Obsługa gamepada",
   "Navigate with a connected controller": "Nawigacja podłączonym kontrolerem",
-  "Lock Horizontal Panning": "Zablokuj przesuwanie poziome"
+  "Lock Horizontal Panning": "Zablokuj przesuwanie poziome",
+  "BookOrbit Sync": "Synchronizacja BookOrbit"
 }

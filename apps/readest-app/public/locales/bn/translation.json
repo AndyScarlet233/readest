@@ -2301,5 +2301,6 @@
   "{{name}}'s Readest": "{{name}}-এর Readest",
   "Gamepad Support": "গেমপ্যাড সমর্থন",
   "Navigate with a connected controller": "সংযুক্ত কন্ট্রোলার দিয়ে নেভিগেট করুন",
-  "Lock Horizontal Panning": "অনুভূমিক প্যানিং লক করুন"
+  "Lock Horizontal Panning": "অনুভূমিক প্যানিং লক করুন",
+  "BookOrbit Sync": "BookOrbit সিঙ্ক"
 }

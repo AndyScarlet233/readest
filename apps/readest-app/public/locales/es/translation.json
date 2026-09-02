@@ -2361,5 +2361,6 @@
   "{{name}}'s Readest": "Readest de {{name}}",
   "Gamepad Support": "Compatibilidad con mando",
   "Navigate with a connected controller": "Navegar con un mando conectado",
-  "Lock Horizontal Panning": "Bloquear el movimiento horizontal"
+  "Lock Horizontal Panning": "Bloquear el movimiento horizontal",
+  "BookOrbit Sync": "Sincronización de BookOrbit"
 }

@@ -2241,5 +2241,6 @@
   "{{name}}'s Readest": "{{name}}의 Readest",
   "Gamepad Support": "게임패드 지원",
   "Navigate with a connected controller": "연결된 컨트롤러로 탐색",
-  "Lock Horizontal Panning": "가로 이동 잠금"
+  "Lock Horizontal Panning": "가로 이동 잠금",
+  "BookOrbit Sync": "BookOrbit 동기화"
 }

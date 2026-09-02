@@ -2301,5 +2301,6 @@
   "{{name}}'s Readest": "{{name}}-ის Readest",
   "Gamepad Support": "გეიმპედის მხარდაჭერა",
   "Navigate with a connected controller": "ნავიგაცია მიერთებული კონტროლერით",
-  "Lock Horizontal Panning": "ჰორიზონტალური გადაადგილების დაბლოკვა"
+  "Lock Horizontal Panning": "ჰორიზონტალური გადაადგილების დაბლოკვა",
+  "BookOrbit Sync": "BookOrbit სინქრონიზაცია"
 }

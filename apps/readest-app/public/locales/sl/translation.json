@@ -2421,5 +2421,6 @@
   "{{name}}'s Readest": "Readest uporabnika {{name}}",
   "Gamepad Support": "Podpora za igralni plošček",
   "Navigate with a connected controller": "Krmarjenje s priključenim krmilnikom",
-  "Lock Horizontal Panning": "Zakleni vodoravno premikanje"
+  "Lock Horizontal Panning": "Zakleni vodoravno premikanje",
+  "BookOrbit Sync": "Sinhronizacija BookOrbit"
 }

@@ -2301,5 +2301,6 @@
   "{{name}}'s Readest": "{{name}} Readestje",
   "Gamepad Support": "Kontroller támogatása",
   "Navigate with a connected controller": "Navigálás csatlakoztatott kontrollerrel",
-  "Lock Horizontal Panning": "Vízszintes mozgatás zárolása"
+  "Lock Horizontal Panning": "Vízszintes mozgatás zárolása",
+  "BookOrbit Sync": "BookOrbit szinkronizálás"
 }
