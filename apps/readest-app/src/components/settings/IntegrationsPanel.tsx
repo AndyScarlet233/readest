@@ -30,12 +30,13 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useCustomOPDSStore } from '@/store/customOPDSStore';
 import { useABSServerStore } from '@/store/absServerStore';
 import { useFileSyncStore } from '@/store/fileSyncStore';
+import { useLocalSendStore } from '@/store/localsendStore';
 import { CatalogManager } from '@/app/opds/components/CatalogManager';
 import { saveSysSettings } from '@/helpers/settings';
 import { isCloudSyncAllowed } from '@/utils/access';
 import { isTauriAppPlatform, isWebAppPlatform } from '@/services/environment';
 import { stopLanSync } from '@/services/lanSync/lifecycle';
-import { isLocalSendEnabled } from '@/services/localsend/devicePrefs';
+import { getLocalSendAlias, isLocalSendEnabled } from '@/services/localsend/devicePrefs';
 import { getGoogleWebClientId } from '@/services/sync/providers/gdrive/buildGoogleDriveProvider';
 import { getMicrosoftClientId } from '@/services/sync/providers/onedrive/buildOneDriveProvider';
 import { isICloudSupportedPlatform } from '@/services/sync/providers/icloud/buildICloudProvider';
@@ -114,6 +115,7 @@ const IntegrationsPanel: React.FC = () => {
   const opdsCount = opdsCatalogs.filter((c) => !c.deletedAt).length;
   const absServers = useABSServerStore((s) => s.servers);
   const absCount = absServers.filter((s) => !s.deletedAt).length;
+  const localSendAlias = useLocalSendStore((s) => s.status?.alias);
   // Surface a library-wide WebDAV sync that's mid-flight in the row's
   // status line. Keeps the user from feeling like the run was lost
   // when they back out of the WebDAV sub-page or close the dialog.
@@ -658,6 +660,9 @@ const IntegrationsPanel: React.FC = () => {
   const opdsStatus =
     opdsCount > 0 ? _('{{count}} catalog', { count: opdsCount }) : _('No catalogs');
   const absStatus = absCount > 0 ? _('{{count}} server', { count: absCount }) : _('No servers');
+  const localSendStatus = !isLocalSendEnabled()
+    ? _('Off')
+    : localSendAlias || getLocalSendAlias() || _('On');
 
   return (
     <div className='my-4 w-full space-y-6'>
@@ -888,7 +893,7 @@ const IntegrationsPanel: React.FC = () => {
               <IntegrationRow
                 icon={RiWifiLine}
                 title={_('Nearby BookDrop')}
-                status={isLocalSendEnabled() ? _('On') : _('Off')}
+                status={localSendStatus}
                 onClick={() => setSubPage('localsend')}
               />
             )}
