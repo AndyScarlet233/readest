@@ -798,13 +798,20 @@ class DriveProviderImpl {
       const fileId = await this.resolveFile(remotePath);
       if (fileId === null) return false;
       const token = await this.auth.getAccessToken();
-      await tauriDownload(mediaDownloadUrl(fileId), localPath, onProgress, {
-        Authorization: `Bearer ${token}`,
-      });
+      await tauriDownload(
+        mediaDownloadUrl(fileId),
+        localPath,
+        onProgress,
+        { Authorization: `Bearer ${token}` },
+        undefined,
+        undefined,
+        undefined,
+        { resume: true },
+      );
       return true;
     } catch (e) {
       console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);
-      return false;
+      throw mapDriveError(e);
     }
   }
 

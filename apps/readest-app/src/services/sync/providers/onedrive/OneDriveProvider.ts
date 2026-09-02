@@ -292,13 +292,20 @@ class OneDriveProviderImpl {
   ): Promise<boolean> {
     try {
       const token = await this.auth.getAccessToken();
-      await tauriDownload(contentUrl(remotePath), localPath, onProgress, {
-        Authorization: `Bearer ${token}`,
-      });
+      await tauriDownload(
+        contentUrl(remotePath),
+        localPath,
+        onProgress,
+        { Authorization: `Bearer ${token}` },
+        undefined,
+        undefined,
+        undefined,
+        { resume: true },
+      );
       return true;
     } catch (e) {
       console.warn('OneDriveProvider.downloadStream failed', remotePath, e);
-      return false;
+      throw mapGraphError(e);
     }
   }
 

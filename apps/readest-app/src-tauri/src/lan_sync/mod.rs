@@ -192,10 +192,12 @@ fn read_valid_device_id(path: &Path) -> Result<Option<String>, String> {
         Err(e) => return Err(format!("lan_sync: inspect device id: {e}")),
     };
     if !metadata.file_type().is_file() {
-        return Err(format!("lan_sync: device id is not a regular file: {}", path.display()));
+        return Err(format!(
+            "lan_sync: device id is not a regular file: {}",
+            path.display()
+        ));
     }
-    let id = std::fs::read_to_string(path)
-        .map_err(|e| format!("lan_sync: read device id: {e}"))?;
+    let id = std::fs::read_to_string(path).map_err(|e| format!("lan_sync: read device id: {e}"))?;
     let id = id.trim();
     Ok(is_valid_device_id(id).then(|| id.to_string()))
 }
@@ -221,7 +223,10 @@ fn remove_device_id_file(path: &Path) -> Result<(), String> {
 fn write_device_id(path: &Path, id: &str) -> Result<(), String> {
     if let Ok(metadata) = std::fs::symlink_metadata(path) {
         if !metadata.file_type().is_file() {
-            return Err(format!("lan_sync: device id is not a regular file: {}", path.display()));
+            return Err(format!(
+                "lan_sync: device id is not a regular file: {}",
+                path.display()
+            ));
         }
     }
     std::fs::write(path, id).map_err(|e| format!("lan_sync: persist device id: {e}"))
@@ -344,7 +349,11 @@ fn discover_mdns() -> Result<Vec<DiscoveredPeer>, String> {
                     .get_property_val_str("device_id")
                     .unwrap_or("")
                     .to_string();
-                if device_id.is_empty() || peers.iter().any(|p: &DiscoveredPeer| p.device_id == device_id) {
+                if device_id.is_empty()
+                    || peers
+                        .iter()
+                        .any(|p: &DiscoveredPeer| p.device_id == device_id)
+                {
                     continue;
                 }
                 let name = props
@@ -434,8 +443,7 @@ pub async fn lan_sync_start<R: Runtime>(
         }
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::create_dir_all(&root)
-                .map_err(|e| format!("lan_sync: create root: {e}"))?;
+            std::fs::create_dir_all(&root).map_err(|e| format!("lan_sync: create root: {e}"))?;
         }
         Err(e) => return Err(format!("lan_sync: inspect root: {e}")),
     }
@@ -486,12 +494,7 @@ pub async fn lan_sync_start<R: Runtime>(
 
     // mDNS is an optional convenience for pairing. A missing IPv4 address or
     // an mDNS daemon failure must not prevent authenticated manual TCP use.
-    let mdns = match advertise_mdns(
-        &device_name,
-        &server_state.device_id,
-        &token,
-        bound_port,
-    ) {
+    let mdns = match advertise_mdns(&device_name, &server_state.device_id, &token, bound_port) {
         Ok(mdns) => Some(mdns),
         Err(e) => {
             log::warn!("{e}");

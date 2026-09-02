@@ -360,11 +360,13 @@ class S3ProviderImpl {
   ): Promise<boolean> {
     try {
       const url = await this.presign(HTTP_GET, remotePath);
-      await tauriDownload(url, localPath, onProgress);
+      await tauriDownload(url, localPath, onProgress, undefined, undefined, undefined, undefined, {
+        resume: true,
+      });
       return true;
     } catch (e) {
       console.warn('S3Provider.downloadStream failed', remotePath, e);
-      return false;
+      throw mapS3Error(e);
     }
   }
 

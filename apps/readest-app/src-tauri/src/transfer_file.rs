@@ -27,7 +27,10 @@ use std::{
 
 type Result<T> = std::result::Result<T, Error>;
 
-const MAX_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+// Native downloads stream to disk, so the old 2 GiB ceiling rejected valid large
+// AZW3/PDF/CBZ files even though neither reqwest nor the filesystem needs them in RAM.
+// Keep a finite sanity limit, but leave enough headroom for omnibus/reference books.
+const MAX_DOWNLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES: u64 = 64 * 1024;
 
 // The TransferStats struct tracks both transfer speed and cumulative transfer progress.
@@ -190,7 +193,10 @@ async fn commit_download_file(temp: &mut DownloadTempFile, file_path: &str) -> R
 fn parse_content_range(value: &str) -> Option<(u64, u64, u64)> {
     let (range, total) = value.trim().split_once('/')?;
     let mut parts = range.split_ascii_whitespace();
-    if !parts.next().is_some_and(|unit| unit.eq_ignore_ascii_case("bytes")) {
+    if !parts
+        .next()
+        .is_some_and(|unit| unit.eq_ignore_ascii_case("bytes"))
+    {
         return None;
     }
     let byte_range = parts.next()?;
@@ -198,10 +204,17 @@ fn parse_content_range(value: &str) -> Option<(u64, u64, u64)> {
         return None;
     }
     let (start, end) = byte_range.split_once('-')?;
-    Some((start.parse().ok()?, end.parse().ok()?, total.trim().parse().ok()?))
+    Some((
+        start.parse().ok()?,
+        end.parse().ok()?,
+        total.trim().parse().ok()?,
+    ))
 }
 
-async fn read_response_body_limited(response: reqwest::Response, max_bytes: u64) -> Result<Vec<u8>> {
+async fn read_response_body_limited(
+    response: reqwest::Response,
+    max_bytes: u64,
+) -> Result<Vec<u8>> {
     let mut body = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.try_next().await? {
@@ -263,7 +276,9 @@ fn is_path_within_root(root: &Path, path: &Path) -> bool {
             .trim_end_matches(&['\\', '/'][..])
             .to_ascii_lowercase();
         let path = path.to_string_lossy().to_ascii_lowercase();
-        path == root || path.starts_with(&format!("{root}\\")) || path.starts_with(&format!("{root}/"))
+        path == root
+            || path.starts_with(&format!("{root}\\"))
+            || path.starts_with(&format!("{root}/"))
     }
     #[cfg(not(windows))]
     {
@@ -580,9 +595,7 @@ async fn resumable_download(
     let valid_sidecar = match tokio::fs::read(&sidecar_path).await {
         Ok(bytes) => serde_json::from_slice::<ResumeMetadata>(&bytes)
             .ok()
-            .is_some_and(|m| {
-                m.url == identity.url && m.etag == identity.etag && m.total == total
-            }),
+            .is_some_and(|m| m.url == identity.url && m.etag == identity.etag && m.total == total),
         Err(_) => false,
     };
     let mut offset = if valid_sidecar {
@@ -649,10 +662,7 @@ async fn resumable_download(
         } else {
             offset == 0
         };
-        let valid_etag = etag
-            .as_str()
-            .is_empty()
-            || response_etag == Some(etag.as_str());
+        let valid_etag = etag.as_str().is_empty() || response_etag == Some(etag.as_str());
         if !valid_status || !valid_range || !valid_etag {
             if attempt == 0 && offset > 0 {
                 offset = 0;
@@ -812,7 +822,10 @@ pub async fn download_file(
     file.set_len(total).await?;
 
     let file = Arc::new(tokio::sync::Mutex::new(file));
-    let progress = Arc::new(std::sync::Mutex::new(ProgressEmitter::new(on_progress.clone(), total)));
+    let progress = Arc::new(std::sync::Mutex::new(ProgressEmitter::new(
+        on_progress.clone(),
+        total,
+    )));
 
     stream::iter(0..part_count)
         .map(Ok::<u64, Error>)
@@ -933,12 +946,17 @@ fn file_to_body(
     file_len: u64,
 ) -> (reqwest::Body, Arc<std::sync::Mutex<ProgressEmitter>>) {
     let stream = FramedRead::new(file, BytesCodec::new()).map_ok(|r| r.freeze());
-    let progress = Arc::new(std::sync::Mutex::new(ProgressEmitter::new(channel, file_len)));
+    let progress = Arc::new(std::sync::Mutex::new(ProgressEmitter::new(
+        channel, file_len,
+    )));
     let callback_progress = Arc::clone(&progress);
     let body = reqwest::Body::wrap_stream(ReadProgressStream::new(
         stream,
         Box::new(move |progress_chunk, _progress_total| {
-            callback_progress.lock().unwrap().record(progress_chunk as usize);
+            callback_progress
+                .lock()
+                .unwrap()
+                .record(progress_chunk as usize);
         }),
     ));
     (body, progress)
@@ -955,7 +973,10 @@ mod tests {
     fn resume_paths_are_stable_and_sidecar_has_no_headers() {
         let (part, sidecar) = resume_paths("/tmp/book.epub");
         assert_eq!(part.to_string_lossy(), "/tmp/book.epub.readest.part");
-        assert_eq!(sidecar.to_string_lossy(), "/tmp/book.epub.readest.part.json");
+        assert_eq!(
+            sidecar.to_string_lossy(),
+            "/tmp/book.epub.readest.part.json"
+        );
     }
 
     #[test]
@@ -971,12 +992,14 @@ mod tests {
         assert_eq!(sidecar.parent(), part.parent());
         assert!(part.file_name().unwrap().to_string_lossy().len() < 255);
         assert!(sidecar.file_name().unwrap().to_string_lossy().len() < 255);
-        assert!(std::path::Path::new(&temp.path)
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .len()
-            < 255);
+        assert!(
+            std::path::Path::new(&temp.path)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .len()
+                < 255
+        );
     }
 
     #[test]
@@ -988,7 +1011,9 @@ mod tests {
         ));
         assert!(!is_path_within_root(
             &root,
-            &root.with_file_name("readest-transfer-root-shadow").join("book.epub")
+            &root
+                .with_file_name("readest-transfer-root-shadow")
+                .join("book.epub")
         ));
     }
 
@@ -1011,8 +1036,14 @@ mod tests {
             Some((0, 1023, 4096))
         );
         assert_eq!(parse_content_range("bytes 0-1023/*"), None);
-        assert_eq!(parse_content_range("bytes 0-1023/4096 "), Some((0, 1023, 4096)));
-        assert_eq!(parse_content_range("Bytes 0-1023 / 4096"), Some((0, 1023, 4096)));
+        assert_eq!(
+            parse_content_range("bytes 0-1023/4096 "),
+            Some((0, 1023, 4096))
+        );
+        assert_eq!(
+            parse_content_range("Bytes 0-1023 / 4096"),
+            Some((0, 1023, 4096))
+        );
         assert_eq!(parse_content_range("items 0-1023/4096"), None);
     }
 
