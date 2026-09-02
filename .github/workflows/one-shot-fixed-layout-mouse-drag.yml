@@ -1,0 +1,147 @@
+name: One-shot fixed-layout mouse drag hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-shot-fixed-layout-mouse-drag.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: setup node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: apply fixed-layout mouse drag fix
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {text.count(old)}')
+              p.write_text(text.replace(old, new, 1))
+
+          pagination = 'apps/readest-app/src/app/reader/hooks/usePagination.ts'
+          replace_once(
+              pagination,
+              """  const mousePanRef = useRef<{\n    startX: number;\n    startY: number;\n    lastX: number;\n    lastY: number;\n    horizontal: boolean;\n    vertical: boolean;\n    claimed: boolean;\n  } | null>(null);""",
+              """  const mousePanRef = useRef<{\n    startX: number;\n    startY: number;\n    lastX: number;\n    lastY: number;\n    horizontal: boolean;\n    vertical: boolean;\n    claimed: boolean;\n    mode: 'pan' | 'page' | null;\n    pageDeltaX: number;\n  } | null>(null);""",
+          )
+          replace_once(
+              pagination,
+              """      const finish = () => {\n        const state = mousePanRef.current;\n        mousePanRef.current = null;\n        setMousePanArmed(bookKey, false);\n        setMousePanClaimed(bookKey, false);\n        if (\n          state?.claimed &&\n          event.type === 'iframe-mouseup' &&\n          event.button === 0 &&\n          event.screenX != null &&\n          event.screenY != null\n        ) {\n          suppressMousePanClick(bookKey, event.screenX, event.screenY);\n        }\n        return Boolean(state?.claimed);\n      };""",
+              """      const finish = (commitPageTurn = false) => {\n        const state = mousePanRef.current;\n        mousePanRef.current = null;\n        setMousePanArmed(bookKey, false);\n        setMousePanClaimed(bookKey, false);\n        if (\n          commitPageTurn &&\n          state?.claimed &&\n          state.mode === 'page' &&\n          Math.abs(state.pageDeltaX) >= 30\n        ) {\n          viewPagination(view, settings, state.pageDeltaX > 0 ? 'left' : 'right');\n        }\n        if (\n          state?.claimed &&\n          event.type === 'iframe-mouseup' &&\n          event.button === 0 &&\n          event.screenX != null &&\n          event.screenY != null\n        ) {\n          suppressMousePanClick(bookKey, event.screenX, event.screenY);\n        }\n        return Boolean(state?.claimed);\n      };""",
+          )
+          replace_once(
+              pagination,
+              """          horizontal,\n          vertical,\n          claimed: false,\n        };""",
+              """          horizontal,\n          vertical,\n          claimed: false,\n          mode: null,\n          pageDeltaX: 0,\n        };""",
+          )
+          replace_once(
+              pagination,
+              """      if (event.type === 'mouseup' || event.type === 'iframe-mouseup') return finish();\n      if (\n        (event.type === 'mousemove' || event.type === 'iframe-mousemove') &&\n        event.buttons != null &&\n        (event.buttons & 1) === 0\n      ) {\n        return finish();\n      }""",
+              """      if (event.type === 'mouseup' || event.type === 'iframe-mouseup') return finish(true);\n      if (\n        (event.type === 'mousemove' || event.type === 'iframe-mousemove') &&\n        event.buttons != null &&\n        (event.buttons & 1) === 0\n      ) {\n        return finish(true);\n      }""",
+          )
+          replace_once(
+              pagination,
+              """      // Keep the session alive while layout catches up. Once overflow appears, the\n      // same held-button gesture can claim and pan without requiring another click.\n      setMousePanArmed(bookKey, true, { horizontal: horizontalPan, vertical: verticalPan });\n      if (!horizontalPan && !verticalPan) return false;\n      if (event.screenX == null || event.screenY == null) return false;\n      const totalX = event.screenX - state.startX;\n      const totalY = event.screenY - state.startY;\n      if (!state.claimed) {\n        state.horizontal = horizontalPan;\n        state.vertical = verticalPan;\n        const distance = Math.hypot(totalX, totalY);\n        if (distance < 6) return false;\n        const horizontal = state.horizontal && Math.abs(totalX) >= Math.abs(totalY);\n        const vertical = state.vertical && Math.abs(totalY) > Math.abs(totalX);\n        if (!horizontal && !vertical) return false;\n        state.horizontal = horizontal;\n        state.vertical = vertical;\n        state.claimed = true;\n        setMousePanClaimed(bookKey, true);\n      }\n      const dx = event.screenX - state.lastX;\n      const dy = event.screenY - state.lastY;\n      state.lastX = event.screenX;\n      state.lastY = event.screenY;\n      // Raw iframe moves pan the foliate-fxl host synchronously. Parent-window\n      // moves (pointer left the iframe) still use view.pan as the continuation.\n      if (!event.rawPanHandled) {\n        view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);\n      }\n      event.preventDefault?.();\n      return true;""",
+              """      // Keep the session alive while layout catches up. Overflowed fixed-layout pages\n      // pan in place; a fit-page comic with no overflow still owns a horizontal\n      // drag as a page-swipe gesture, matching the touch path instead of feeling dead.\n      setMousePanArmed(bookKey, true, { horizontal: horizontalPan, vertical: verticalPan });\n      const canPageDrag = !settings?.disableSwipe && !isPanningView(view, settings);\n      if (!horizontalPan && !verticalPan && !canPageDrag) return false;\n      if (event.screenX == null || event.screenY == null) return false;\n      const totalX = event.screenX - state.startX;\n      const totalY = event.screenY - state.startY;\n      state.pageDeltaX = totalX;\n      if (!state.claimed) {\n        const distance = Math.hypot(totalX, totalY);\n        if (distance < 6) return false;\n        const horizontalDominant = Math.abs(totalX) >= Math.abs(totalY);\n        const verticalDominant = Math.abs(totalY) > Math.abs(totalX);\n        if (horizontalPan && horizontalDominant) {\n          state.horizontal = true;\n          state.vertical = false;\n          state.mode = 'pan';\n        } else if (verticalPan && verticalDominant) {\n          state.horizontal = false;\n          state.vertical = true;\n          state.mode = 'pan';\n        } else if (canPageDrag && horizontalDominant && Math.abs(totalX) >= 10) {\n          state.horizontal = true;\n          state.vertical = false;\n          state.mode = 'page';\n        } else {\n          return false;\n        }\n        state.claimed = true;\n        setMousePanClaimed(bookKey, true);\n      }\n      if (state.mode === 'page') {\n        event.preventDefault?.();\n        return true;\n      }\n      const dx = event.screenX - state.lastX;\n      const dy = event.screenY - state.lastY;\n      state.lastX = event.screenX;\n      state.lastY = event.screenY;\n      // Raw iframe moves pan the foliate-fxl host synchronously. Parent-window\n      // moves (pointer left the iframe) still use view.pan as the continuation.\n      if (!event.rawPanHandled) {\n        view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);\n      }\n      event.preventDefault?.();\n      return true;""",
+          )
+
+          handlers = 'apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts'
+          replace_once(
+              handlers,
+              """export const handleMousedown = (bookKey: string, event: MouseEvent) => {""",
+              """// Bitmap comic pages are real <img> documents. Chromium/WebView starts native\n// image drag-and-drop before our mousemove threshold can claim the gesture, which\n// steals the stream from foliate-fxl. Cancel only that browser default; the\n// reader's own click/page-turn and fixed-layout pan arbitration remain unchanged.\nexport const handleDragstart = (_bookKey: string, event: DragEvent) => {\n  const localName = (event.target as { localName?: string } | null)?.localName?.toLowerCase();\n  if (localName !== 'img' && localName !== 'image') return;\n  if (getRawFixedLayoutRenderer(event)) event.preventDefault();\n};\n\nexport const handleMousedown = (bookKey: string, event: MouseEvent) => {""",
+          )
+
+          viewer = 'apps/readest-app/src/app/reader/components/FoliateViewer.tsx'
+          replace_once(
+              viewer,
+              """  handleMousemove,\n  handleAuxclick,""",
+              """  handleMousemove,\n  handleDragstart,\n  handleAuxclick,""",
+          )
+          replace_once(
+              viewer,
+              """        detail.doc.addEventListener('mousemove', handleMousemove.bind(null, bookKey));\n        detail.doc.addEventListener('auxclick', handleAuxclick.bind(null, bookKey));""",
+              """        detail.doc.addEventListener('mousemove', handleMousemove.bind(null, bookKey));\n        detail.doc.addEventListener('dragstart', handleDragstart.bind(null, bookKey));\n        detail.doc.addEventListener('auxclick', handleAuxclick.bind(null, bookKey));""",
+          )
+
+          test = 'apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts'
+          replace_once(
+              test,
+              """import { handleClickCapture } from '@/app/reader/utils/iframeEventHandlers';""",
+              """import {\n  handleClickCapture,\n  handleDragstart,\n} from '@/app/reader/utils/iframeEventHandlers';""",
+          )
+          marker = """  test('uses the live fixed-layout view when stored metadata lags', () => {"""
+          addition = """  test('turns a fit-page fixed-layout page after a horizontal mouse drag without overflow', () => {\n    const view = makeView(false, false);\n    mocks.getViewSettings.mockReturnValue({\n      scrolled: false,\n      zoomLevel: 100,\n      zoomMode: 'fit-page',\n      disableSwipe: false,\n      rtl: false,\n    });\n    const h = renderHook(() =>\n      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),\n    );\n\n    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);\n    expect(\n      h.result.current.handleMousePan({\n        type: 'iframe-mousemove',\n        bookKey: 'book-1',\n        buttons: 1,\n        screenX: 60,\n        screenY: 102,\n      }),\n    ).toBe(true);\n    expect(view.pan).not.toHaveBeenCalled();\n    expect(\n      h.result.current.handleMousePan({\n        type: 'iframe-mouseup',\n        bookKey: 'book-1',\n        button: 0,\n        screenX: 60,\n        screenY: 102,\n      }),\n    ).toBe(true);\n    expect(view.next).toHaveBeenCalledOnce();\n    expect(view.prev).not.toHaveBeenCalled();\n  });\n\n  test('does not turn a zoomed no-overflow view as a page drag', () => {\n    const view = makeView(false, false);\n    mocks.getViewSettings.mockReturnValue({\n      scrolled: false,\n      zoomLevel: 150,\n      zoomMode: 'fit-page',\n      disableSwipe: false,\n      rtl: false,\n    });\n    const h = renderHook(() =>\n      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),\n    );\n\n    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);\n    expect(\n      h.result.current.handleMousePan({\n        type: 'iframe-mousemove',\n        bookKey: 'book-1',\n        buttons: 1,\n        screenX: 50,\n        screenY: 100,\n      }),\n    ).toBe(false);\n    expect(\n      h.result.current.handleMousePan({\n        type: 'iframe-mouseup',\n        bookKey: 'book-1',\n        button: 0,\n        screenX: 50,\n        screenY: 100,\n      }),\n    ).toBe(false);\n    expect(view.pan).not.toHaveBeenCalled();\n    expect(view.next).not.toHaveBeenCalled();\n    expect(view.prev).not.toHaveBeenCalled();\n  });\n\n  test('cancels native image drag inside foliate-fxl only', () => {\n    const preventDefault = vi.fn();\n    const renderer = { localName: 'foliate-fxl', scrolled: false };\n    const event = {\n      target: { localName: 'img' },\n      currentTarget: {\n        defaultView: {\n          frameElement: { getRootNode: () => ({ host: renderer }) },\n        },\n      },\n      preventDefault,\n    } as unknown as DragEvent;\n\n    handleDragstart('book-1', event);\n    expect(preventDefault).toHaveBeenCalledOnce();\n\n    renderer.localName = 'foliate-paginator';\n    handleDragstart('book-1', event);\n    expect(preventDefault).toHaveBeenCalledOnce();\n  });\n\n""" + marker
+          replace_once(test, marker, addition)
+          PY
+
+      - name: format changed files
+        run: |
+          pnpm exec biome format --write \
+            apps/readest-app/src/app/reader/hooks/usePagination.ts \
+            apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts \
+            apps/readest-app/src/app/reader/components/FoliateViewer.tsx \
+            apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+
+      - name: check formatting
+        run: pnpm -w format:check
+
+      - name: create test env
+        run: |
+          cat > apps/readest-app/.env.test.local <<'EOF'
+          NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoyMDAwMDAwMDAwfQ.dGVzdA
+          SUPABASE_URL=https://example.supabase.co
+          SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoyMDAwMDAwMDAwfQ.dGVzdA
+          EOF
+
+      - name: run fixed-layout mouse regression tests
+        run: pnpm --filter @readest/readest-app test -- --run src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+
+      - name: prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: TypeScript typecheck
+        run: pnpm --filter @readest/readest-app exec tsc --noEmit
+
+      - name: commit verified fix and remove helper workflow
+        shell: bash
+        run: |
+          rm -f apps/readest-app/.env.test.local
+          git rm .github/workflows/one-shot-fixed-layout-mouse-drag.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            apps/readest-app/src/app/reader/hooks/usePagination.ts \
+            apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts \
+            apps/readest-app/src/app/reader/components/FoliateViewer.tsx \
+            apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+          git commit -m 'fix(reader): restore comic mouse drag gestures'
+          HUSKY=0 git push origin HEAD:main
