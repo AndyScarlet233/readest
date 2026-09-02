@@ -22,7 +22,7 @@ async function processInBatches<T>(
  * every reload and therefore jump to the front of the default Updated-desc sort.
  */
 export const resolveLibraryUpdatedAt = (
-  book: Pick<Book, 'updatedAt' | 'lastUpdated' | 'createdAt'>,
+  book: Partial<Pick<Book, 'updatedAt' | 'lastUpdated' | 'createdAt'>>,
 ): number => book.updatedAt ?? book.lastUpdated ?? book.createdAt ?? 0;
 
 export async function loadLibraryBooks(

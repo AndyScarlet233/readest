@@ -248,6 +248,8 @@ export const usePagination = (
     horizontal: boolean;
     vertical: boolean;
     claimed: boolean;
+    mode: 'pan' | 'page' | null;
+    pageDeltaX: number;
   } | null>(null);
 
   useEffect(() => {
@@ -294,11 +296,19 @@ export const usePagination = (
       const view = viewRef.current;
       const settings = getViewSettings(bookKey);
       const data = getBookData(bookKey);
-      const finish = () => {
+      const finish = (commitPageTurn = false) => {
         const state = mousePanRef.current;
         mousePanRef.current = null;
         setMousePanArmed(bookKey, false);
         setMousePanClaimed(bookKey, false);
+        if (
+          commitPageTurn &&
+          state?.claimed &&
+          state.mode === 'page' &&
+          Math.abs(state.pageDeltaX) >= 30
+        ) {
+          viewPagination(view, settings, state.pageDeltaX > 0 ? 'left' : 'right');
+        }
         if (
           state?.claimed &&
           event.type === 'iframe-mouseup' &&
@@ -333,18 +343,20 @@ export const usePagination = (
           horizontal,
           vertical,
           claimed: false,
+          mode: null,
+          pageDeltaX: 0,
         };
         return false;
       }
       const state = mousePanRef.current;
       if (!state) return false;
-      if (event.type === 'mouseup' || event.type === 'iframe-mouseup') return finish();
+      if (event.type === 'mouseup' || event.type === 'iframe-mouseup') return finish(true);
       if (
         (event.type === 'mousemove' || event.type === 'iframe-mousemove') &&
         event.buttons != null &&
         (event.buttons & 1) === 0
       ) {
-        return finish();
+        return finish(true);
       }
       const horizontalPan = hasHorizontalPanning(view, settings);
       const verticalPan = hasVerticalPanning(view, settings);
@@ -354,25 +366,42 @@ export const usePagination = (
         setMousePanClaimed(bookKey, false);
         return false;
       }
-      // Keep the session alive while layout catches up. Once overflow appears, the
-      // same held-button gesture can claim and pan without requiring another click.
+      // Keep the session alive while layout catches up. Overflowed fixed-layout pages
+      // pan in place; a fit-page comic with no overflow still owns a horizontal
+      // drag as a page-swipe gesture, matching the touch path instead of feeling dead.
       setMousePanArmed(bookKey, true, { horizontal: horizontalPan, vertical: verticalPan });
-      if (!horizontalPan && !verticalPan) return false;
+      const canPageDrag = !settings?.disableSwipe && !isPanningView(view, settings);
+      if (!horizontalPan && !verticalPan && !canPageDrag) return false;
       if (event.screenX == null || event.screenY == null) return false;
       const totalX = event.screenX - state.startX;
       const totalY = event.screenY - state.startY;
+      state.pageDeltaX = totalX;
       if (!state.claimed) {
-        state.horizontal = horizontalPan;
-        state.vertical = verticalPan;
         const distance = Math.hypot(totalX, totalY);
         if (distance < 6) return false;
-        const horizontal = state.horizontal && Math.abs(totalX) >= Math.abs(totalY);
-        const vertical = state.vertical && Math.abs(totalY) > Math.abs(totalX);
-        if (!horizontal && !vertical) return false;
-        state.horizontal = horizontal;
-        state.vertical = vertical;
+        const horizontalDominant = Math.abs(totalX) >= Math.abs(totalY);
+        const verticalDominant = Math.abs(totalY) > Math.abs(totalX);
+        if (horizontalPan && horizontalDominant) {
+          state.horizontal = true;
+          state.vertical = false;
+          state.mode = 'pan';
+        } else if (verticalPan && verticalDominant) {
+          state.horizontal = false;
+          state.vertical = true;
+          state.mode = 'pan';
+        } else if (canPageDrag && horizontalDominant && Math.abs(totalX) >= 10) {
+          state.horizontal = true;
+          state.vertical = false;
+          state.mode = 'page';
+        } else {
+          return false;
+        }
         state.claimed = true;
         setMousePanClaimed(bookKey, true);
+      }
+      if (state.mode === 'page') {
+        event.preventDefault?.();
+        return true;
       }
       const dx = event.screenX - state.lastX;
       const dy = event.screenY - state.lastY;

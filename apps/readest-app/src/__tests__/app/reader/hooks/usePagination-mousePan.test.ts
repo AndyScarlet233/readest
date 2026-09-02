@@ -45,7 +45,7 @@ vi.mock('@/store/sidebarStore', () => ({
 vi.mock('@/utils/bridge', () => ({ refreshEinkScreen: vi.fn() }));
 
 import { usePagination } from '@/app/reader/hooks/usePagination';
-import { handleClickCapture } from '@/app/reader/utils/iframeEventHandlers';
+import { handleClickCapture, handleDragstart } from '@/app/reader/utils/iframeEventHandlers';
 
 const makeView = (x = true, y = true) => ({
   book: { rendition: { layout: 'pre-paginated' } },
@@ -144,6 +144,101 @@ describe('usePagination fixed-layout mouse pan', () => {
       }),
     ).toBe(true);
     expect(view.pan).toHaveBeenCalledWith(-20, 0);
+  });
+
+  test('turns a fit-page fixed-layout page after a horizontal mouse drag without overflow', () => {
+    const view = makeView(false, false);
+    mocks.getViewSettings.mockReturnValue({
+      scrolled: false,
+      zoomLevel: 100,
+      zoomMode: 'fit-page',
+      disableSwipe: false,
+      rtl: false,
+    });
+    const h = renderHook(() =>
+      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
+    );
+
+    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);
+    expect(
+      h.result.current.handleMousePan({
+        type: 'iframe-mousemove',
+        bookKey: 'book-1',
+        buttons: 1,
+        screenX: 60,
+        screenY: 102,
+      }),
+    ).toBe(true);
+    expect(view.pan).not.toHaveBeenCalled();
+    expect(
+      h.result.current.handleMousePan({
+        type: 'iframe-mouseup',
+        bookKey: 'book-1',
+        button: 0,
+        screenX: 60,
+        screenY: 102,
+      }),
+    ).toBe(true);
+    expect(view.next).toHaveBeenCalledOnce();
+    expect(view.prev).not.toHaveBeenCalled();
+  });
+
+  test('does not turn a zoomed no-overflow view as a page drag', () => {
+    const view = makeView(false, false);
+    mocks.getViewSettings.mockReturnValue({
+      scrolled: false,
+      zoomLevel: 150,
+      zoomMode: 'fit-page',
+      disableSwipe: false,
+      rtl: false,
+    });
+    const h = renderHook(() =>
+      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
+    );
+
+    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);
+    expect(
+      h.result.current.handleMousePan({
+        type: 'iframe-mousemove',
+        bookKey: 'book-1',
+        buttons: 1,
+        screenX: 50,
+        screenY: 100,
+      }),
+    ).toBe(false);
+    expect(
+      h.result.current.handleMousePan({
+        type: 'iframe-mouseup',
+        bookKey: 'book-1',
+        button: 0,
+        screenX: 50,
+        screenY: 100,
+      }),
+    ).toBe(false);
+    expect(view.pan).not.toHaveBeenCalled();
+    expect(view.next).not.toHaveBeenCalled();
+    expect(view.prev).not.toHaveBeenCalled();
+  });
+
+  test('cancels native image drag inside foliate-fxl only', () => {
+    const preventDefault = vi.fn();
+    const renderer = { localName: 'foliate-fxl', scrolled: false };
+    const event = {
+      target: { localName: 'img' },
+      currentTarget: {
+        defaultView: {
+          frameElement: { getRootNode: () => ({ host: renderer }) },
+        },
+      },
+      preventDefault,
+    } as unknown as DragEvent;
+
+    handleDragstart('book-1', event);
+    expect(preventDefault).toHaveBeenCalledOnce();
+
+    renderer.localName = 'foliate-paginator';
+    handleDragstart('book-1', event);
+    expect(preventDefault).toHaveBeenCalledOnce();
   });
 
   test('uses the live fixed-layout view when stored metadata lags', () => {

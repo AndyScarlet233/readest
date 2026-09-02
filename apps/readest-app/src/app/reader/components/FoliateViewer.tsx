@@ -55,6 +55,7 @@ import {
   handleMousedown,
   handleMouseup,
   handleMousemove,
+  handleDragstart,
   handleAuxclick,
   handleClick,
   handleClickCapture,
@@ -454,6 +455,7 @@ const FoliateViewer: React.FC<{
         detail.doc.addEventListener('mousedown', handleMousedown.bind(null, bookKey));
         detail.doc.addEventListener('mouseup', handleMouseup.bind(null, bookKey));
         detail.doc.addEventListener('mousemove', handleMousemove.bind(null, bookKey));
+        detail.doc.addEventListener('dragstart', handleDragstart.bind(null, bookKey));
         detail.doc.addEventListener('auxclick', handleAuxclick.bind(null, bookKey));
         detail.doc.addEventListener('click', handleClickCapture.bind(null, bookKey), {
           capture: true,

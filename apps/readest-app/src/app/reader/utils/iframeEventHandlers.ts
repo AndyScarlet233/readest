@@ -466,6 +466,16 @@ export const handleKeyup = (bookKey: string, event: KeyboardEvent) => {
   );
 };
 
+// Bitmap comic pages are real <img> documents. Chromium/WebView starts native
+// image drag-and-drop before our mousemove threshold can claim the gesture, which
+// steals the stream from foliate-fxl. Cancel only that browser default; the
+// reader's own click/page-turn and fixed-layout pan arbitration remain unchanged.
+export const handleDragstart = (_bookKey: string, event: DragEvent) => {
+  const localName = (event.target as { localName?: string } | null)?.localName?.toLowerCase();
+  if (localName !== 'img' && localName !== 'image') return;
+  if (getRawFixedLayoutRenderer(event)) event.preventDefault();
+};
+
 export const handleMousedown = (bookKey: string, event: MouseEvent) => {
   isMouseDown = true;
   if (longHoldTimeout) clearTimeout(longHoldTimeout);
