@@ -10,7 +10,8 @@ interface Token {
   plan: UserPlan;
   storage_usage_bytes: number;
   storage_purchased_bytes: number;
-  [key: string]: string | number;
+  customization_purchased: boolean;
+  [key: string]: string | number | boolean;
 }
 
 export const getSubscriptionPlan = (token: string): UserPlan => {
@@ -42,8 +43,8 @@ export const getUserProfilePlan = (token: string): UserPlan => {
  */
 export const EMAIL_IN_PLANS: readonly UserPlan[] = ['plus', 'pro', 'purchase'];
 
-export const isEmailInPlan = (plan: UserPlan): boolean =>
-  (EMAIL_IN_PLANS as readonly UserPlan[]).includes(plan);
+export const isEmailInPlan = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  isCustomizationAllowed(plan, customizationPurchased);
 
 /**
  * Plans that include third-party cloud sync (WebDAV / Google Drive): any paid
@@ -53,8 +54,8 @@ export const isEmailInPlan = (plan: UserPlan): boolean =>
  */
 export const CLOUD_SYNC_PLANS: readonly UserPlan[] = ['plus', 'pro', 'purchase'];
 
-export const isCloudSyncInPlan = (plan: UserPlan): boolean =>
-  (CLOUD_SYNC_PLANS as readonly UserPlan[]).includes(plan);
+export const isCloudSyncInPlan = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  isCustomizationAllowed(plan, customizationPurchased);
 
 /**
  * Master switch for the third-party cloud-sync premium paywall. ON: cloud
@@ -71,19 +72,21 @@ export const CLOUD_SYNC_REQUIRES_PREMIUM = true;
  * Fork unlock: this personal build ungates the client-side-only premium
  * features regardless of plan. Only gates whose feature works entirely
  * locally (third-party cloud sync against the user's own accounts, offline
- * TTS audio cached on device) are affected; Readest-server resources —
- * cloud storage quota, DeepL translation quota, the Send-to-Kindle email
- * address — keep their server-side enforcement untouched.
+ * TTS audio cached on device, Nearby BookDrop pairing) are affected;
+ * Readest-server resources — cloud storage quota, DeepL translation quota,
+ * the Send-to-Readest email address — keep their server-side enforcement.
  */
 export const FORK_UNLOCK = true;
 
 /**
  * Whether third-party cloud sync is available for a plan. Falls back to the
- * {@link isCloudSyncInPlan} paywall while {@link CLOUD_SYNC_REQUIRES_PREMIUM}
- * is on; flipping the switch off ungates every plan.
+ * customization paywall while {@link CLOUD_SYNC_REQUIRES_PREMIUM} is on;
+ * the fork unlock deliberately keeps user-owned cloud backends available.
  */
-export const isCloudSyncAllowed = (plan: UserPlan): boolean =>
-  FORK_UNLOCK || !CLOUD_SYNC_REQUIRES_PREMIUM || isCloudSyncInPlan(plan);
+export const isCloudSyncAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  FORK_UNLOCK ||
+  !CLOUD_SYNC_REQUIRES_PREMIUM ||
+  isCloudSyncInPlan(plan, customizationPurchased);
 
 /**
  * Plans that include the offline TTS audio cache — pre-downloading a book's
@@ -93,20 +96,61 @@ export const isCloudSyncAllowed = (plan: UserPlan): boolean =>
  */
 export const TTS_CACHE_PLANS: readonly UserPlan[] = ['plus', 'pro', 'purchase'];
 
-export const isTTSCacheInPlan = (plan: UserPlan): boolean =>
-  (TTS_CACHE_PLANS as readonly UserPlan[]).includes(plan);
+export const isTTSCacheInPlan = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  isCustomizationAllowed(plan, customizationPurchased);
 
 /**
  * Master switch for the offline-audio premium paywall, mirroring
  * {@link CLOUD_SYNC_REQUIRES_PREMIUM}. ON: pre-downloading TTS audio requires a
- * {@link TTS_CACHE_PLANS} plan. Flipping it off ungates every plan. The
- * automatic playback cache (audio kept as the user listens) is unaffected —
- * only the explicit download UI is gated.
+ * paid entitlement upstream. The fork unlock keeps this local-only cache open.
  */
 export const TTS_CACHE_REQUIRES_PREMIUM = true;
 
-export const isTTSCacheAllowed = (plan: UserPlan): boolean =>
-  FORK_UNLOCK || !TTS_CACHE_REQUIRES_PREMIUM || isTTSCacheInPlan(plan);
+export const isTTSCacheAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  FORK_UNLOCK || !TTS_CACHE_REQUIRES_PREMIUM || isTTSCacheInPlan(plan, customizationPurchased);
+
+/**
+ * Plans that include Nearby BookDrop device pairing — trusted devices whose
+ * drops skip the per-transfer confirmation dialog. Plain confirm-every-time
+ * transfers stay free upstream; pairing itself is client/LAN-side only.
+ */
+export const NEARBY_PAIRING_PLANS: readonly UserPlan[] = ['plus', 'pro', 'purchase'];
+
+export const isNearbyPairingInPlan = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  isCustomizationAllowed(plan, customizationPurchased);
+
+export const NEARBY_PAIRING_REQUIRES_PREMIUM = true;
+
+export const isNearbyPairingAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  FORK_UNLOCK ||
+  !NEARBY_PAIRING_REQUIRES_PREMIUM ||
+  isNearbyPairingInPlan(plan, customizationPurchased);
+
+/**
+ * Whether the account has bought the Full Customization unlock, as minted into
+ * the access token by `custom_access_token_hook`. Absent on tokens issued
+ * before the claim existed, which reads as not purchased.
+ */
+export const getCustomizationPurchased = (token: string): boolean => {
+  const data = jwtDecode<Token>(token) || {};
+  return data['customization_purchased'] === true;
+};
+
+/**
+ * Plans that carry the premium feature set without a separate purchase.
+ * `purchase` is deliberately absent because it is also used for storage-only
+ * buyers; the customization claim distinguishes the permanent feature unlock.
+ */
+export const PREMIUM_PLANS: readonly UserPlan[] = ['plus', 'pro'];
+
+/** Self-hosted deployments unlock every premium feature. */
+export const isSelfHosted = (): boolean =>
+  getRuntimeConfig()?.selfHosted === true ||
+  (process.env['SELF_HOSTED'] || process.env['NEXT_PUBLIC_SELF_HOSTED']) === 'true';
+
+/** The upstream entitlement gate for server-backed premium features. */
+export const isCustomizationAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
+  isSelfHosted() || customizationPurchased || PREMIUM_PLANS.includes(plan);
 
 export const STORAGE_QUOTA_GRACE_BYTES = 10 * 1024 * 1024; // 10 MB grace
 
