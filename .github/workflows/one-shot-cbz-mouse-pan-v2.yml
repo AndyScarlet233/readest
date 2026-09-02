@@ -1,0 +1,184 @@
+name: One-shot CBZ mouse pan v2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-shot-cbz-mouse-pan-v2.yml
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  hotfix:
+    name: 修复真实 iframe 鼠标拖动并启动发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: apply direct fixed-layout mouse pan hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement target, found {count}')
+              file.write_text(text.replace(old, new, 1))
+
+          pagination = 'apps/readest-app/src/app/reader/hooks/usePagination.ts'
+          iframe = 'apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts'
+          test = 'apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts'
+
+          replace_once(
+              iframe,
+              """interface MousePanGesture {\n  startX: number;\n  startY: number;\n  horizontal: boolean;\n  vertical: boolean;\n  claimed: boolean;\n}""",
+              """interface MousePanGesture {\n  startX: number;\n  startY: number;\n  lastX: number;\n  lastY: number;\n  horizontal: boolean;\n  vertical: boolean;\n  claimed: boolean;\n}""",
+          )
+
+          replace_once(
+              iframe,
+              """interface FixedLayoutRenderer extends HTMLElement {\n  scrolled?: boolean;\n  isOverflowX?: boolean;\n  isOverflowY?: boolean;\n}\n\n// The iframe can inspect its fixed-layout renderer synchronously. This avoids\n// waiting for the parent realm's postMessage when deciding whether to cancel a\n// native touch/mouse gesture on its first move.\nconst getRawFixedLayoutPanAxes = (event: Event): PanAxes | null | undefined => {\n  const currentTarget = event.currentTarget as Document | null;\n  const frame = currentTarget?.defaultView?.frameElement;\n  const root = frame?.getRootNode();\n  const renderer =\n    root && 'host' in root ? ((root as ShadowRoot).host as FixedLayoutRenderer) : null;\n  if (!renderer) return undefined;\n  if (renderer.localName === 'foliate-paginator') return null;\n  if (renderer.localName !== 'foliate-fxl' || renderer.scrolled) return null;\n  const axes = {\n    horizontal: renderer.isOverflowX === true,\n    vertical: renderer.isOverflowY === true,\n  };\n  // A fixed-layout page with no overflow yet is still eligible for a drag\n  // session: resize/zoom can expose an axis while the primary button is held.\n  return axes;\n};""",
+              """interface FixedLayoutRenderer extends HTMLElement {\n  scrolled?: boolean;\n  isOverflowX?: boolean;\n  isOverflowY?: boolean;\n  pan?: (dx: number, dy: number) => void | Promise<void>;\n}\n\n// Resolve the actual fixed-layout host from the iframe document. Mouse dragging\n// uses this host directly so movement is not dependent on postMessage timing.\nconst getRawFixedLayoutRenderer = (event: Event): FixedLayoutRenderer | null | undefined => {\n  const currentTarget = event.currentTarget as Document | null;\n  const frame = currentTarget?.defaultView?.frameElement;\n  const root = frame?.getRootNode();\n  const renderer =\n    root && 'host' in root ? ((root as ShadowRoot).host as FixedLayoutRenderer) : null;\n  if (!renderer) return undefined;\n  if (renderer.localName === 'foliate-paginator') return null;\n  if (renderer.localName !== 'foliate-fxl' || renderer.scrolled) return null;\n  return renderer;\n};\n\n// The iframe can inspect its fixed-layout renderer synchronously. This avoids\n// waiting for the parent realm's postMessage when deciding whether to cancel a\n// native touch/mouse gesture on its first move.\nconst getRawFixedLayoutPanAxes = (event: Event): PanAxes | null | undefined => {\n  const renderer = getRawFixedLayoutRenderer(event);\n  if (!renderer) return renderer;\n  return {\n    horizontal: renderer.isOverflowX === true,\n    vertical: renderer.isOverflowY === true,\n  };\n};""",
+          )
+
+          replace_once(
+              iframe,
+              """      mousePanGestures.set(bookKey, {\n        startX: event.screenX,\n        startY: event.screenY,\n        horizontal: false,\n        vertical: false,\n        claimed: false,\n      });""",
+              """      mousePanGestures.set(bookKey, {\n        startX: event.screenX,\n        startY: event.screenY,\n        lastX: event.screenX,\n        lastY: event.screenY,\n        horizontal: false,\n        vertical: false,\n        claimed: false,\n      });""",
+          )
+
+          replace_once(
+              iframe,
+              """  let rawPanClaimed = false;\n  if (\n    gesture &&\n    event.buttons != null &&\n    (event.buttons & 1) !== 0 &&\n    Number.isFinite(event.screenX) &&\n    Number.isFinite(event.screenY)\n  ) {\n    const rawAxes = getRawFixedLayoutPanAxes(event);\n    const axes = rawAxes === undefined ? mousePanArmedBooks.get(bookKey) : rawAxes;\n    rawPanClaimed = tryClaimMousePan(bookKey, gesture, axes, event.screenX, event.screenY);\n  }""",
+              """  let rawPanClaimed = false;\n  let rawPanHandled = false;\n  if (\n    gesture &&\n    event.buttons != null &&\n    (event.buttons & 1) !== 0 &&\n    Number.isFinite(event.screenX) &&\n    Number.isFinite(event.screenY)\n  ) {\n    const rawRenderer = getRawFixedLayoutRenderer(event);\n    const rawAxes =\n      rawRenderer === undefined\n        ? undefined\n        : rawRenderer === null\n          ? null\n          : {\n              horizontal: rawRenderer.isOverflowX === true,\n              vertical: rawRenderer.isOverflowY === true,\n            };\n    const axes = rawAxes === undefined ? mousePanArmedBooks.get(bookKey) : rawAxes;\n    rawPanClaimed = tryClaimMousePan(bookKey, gesture, axes, event.screenX, event.screenY);\n    if (rawPanClaimed && rawRenderer?.pan) {\n      const dx = event.screenX - gesture.lastX;\n      const dy = event.screenY - gesture.lastY;\n      gesture.lastX = event.screenX;\n      gesture.lastY = event.screenY;\n      try {\n        void rawRenderer.pan(gesture.horizontal ? -dx : 0, gesture.vertical ? -dy : 0);\n        rawPanHandled = true;\n      } catch {\n        // Parent-realm view.pan remains the fallback for this same move.\n      }\n    }\n  }""",
+          )
+
+          replace_once(
+              iframe,
+              """      screenX: event.screenX,\n      screenY: event.screenY,\n    },""",
+              """      screenX: event.screenX,\n      screenY: event.screenY,\n      rawPanHandled,\n    },""",
+          )
+
+          replace_once(
+              pagination,
+              """const isPanningView = (view: FoliateView | null, viewSettings: ViewSettings | null | undefined) => {\n  if (!view || !viewSettings) return false;\n  return (\n    view.book?.rendition?.layout === 'pre-paginated' &&\n    (viewSettings.zoomLevel > 100 || viewSettings.zoomMode !== 'fit-page')\n  );\n};""",
+              """const isPanningView = (view: FoliateView | null, viewSettings: ViewSettings | null | undefined) => {\n  if (!view || !viewSettings) return false;\n  return (\n    view.book?.rendition?.layout === 'pre-paginated' &&\n    (viewSettings.zoomLevel > 100 || viewSettings.zoomMode !== 'fit-page')\n  );\n};\n\n// The live Foliate view is authoritative for gesture admission. Store metadata\n// can briefly lag a mounted CBZ view during open/recreate, and must not erase a\n// raw iframe drag session that already started on a foliate-fxl renderer.\nconst isFixedLayoutView = (view: FoliateView | null, storedFixedLayout?: boolean) =>\n  Boolean(\n    storedFixedLayout ||\n      view?.isFixedLayout ||\n      view?.book?.rendition?.layout === 'pre-paginated',\n  );""",
+          )
+
+          replace_once(
+              pagination,
+              """    setMousePanArmed(bookKey, Boolean(data?.isFixedLayout && !settings?.scrolled), {\n      horizontal,\n      vertical,\n    });""",
+              """    setMousePanArmed(\n      bookKey,\n      Boolean(isFixedLayoutView(view, data?.isFixedLayout) && !settings?.scrolled),\n      { horizontal, vertical },\n    );""",
+          )
+
+          replace_once(
+              pagination,
+              """    hasTextSelection?: boolean;\n    preventDefault?: () => void;""",
+              """    hasTextSelection?: boolean;\n    rawPanHandled?: boolean;\n    preventDefault?: () => void;""",
+          )
+
+          replace_once(
+              pagination,
+              """        const canTrack = Boolean(\n          data?.isFixedLayout &&\n            !settings?.scrolled &&\n            event.button === 0 &&\n            !event.hasTextSelection,\n        );""",
+              """        const canTrack = Boolean(\n          isFixedLayoutView(view, data?.isFixedLayout) &&\n            !settings?.scrolled &&\n            event.button === 0 &&\n            !event.hasTextSelection,\n        );""",
+          )
+
+          replace_once(
+              pagination,
+              """      if (!data?.isFixedLayout || settings?.scrolled) {""",
+              """      if (!isFixedLayoutView(view, data?.isFixedLayout) || settings?.scrolled) {""",
+          )
+
+          replace_once(
+              pagination,
+              """      view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);\n      event.preventDefault?.();""",
+              """      // Raw iframe moves pan the foliate-fxl host synchronously. Parent-window\n      // moves (pointer left the iframe) still use view.pan as the continuation.\n      if (!event.rawPanHandled) {\n        view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);\n      }\n      event.preventDefault?.();""",
+          )
+
+          replace_once(
+              test,
+              """const makeView = (x = true, y = true) => ({\n  book: { rendition: { layout: 'pre-paginated' } },\n  renderer: { scrolled: false },""",
+              """const makeView = (x = true, y = true) => ({\n  book: { rendition: { layout: 'pre-paginated' } },\n  isFixedLayout: true,\n  renderer: { scrolled: false },""",
+          )
+
+          marker = """  test('ends a claimed drag when a move reports no buttons', () => {"""
+          regressions = """  test('uses the live fixed-layout view when stored metadata lags', () => {\n    const view = makeView();\n    mocks.getBookData.mockReturnValue({ isFixedLayout: false });\n    const h = renderHook(() =>\n      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),\n    );\n\n    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);\n    expect(\n      h.result.current.handleMousePan({\n        type: 'iframe-mousemove',\n        bookKey: 'book-1',\n        buttons: 1,\n        screenX: 120,\n        screenY: 100,\n      }),\n    ).toBe(true);\n    expect(view.pan).toHaveBeenCalledWith(-20, 0);\n  });\n\n  test('does not double-pan an iframe move already handled by foliate-fxl', () => {\n    const view = makeView();\n    const h = renderHook(() =>\n      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),\n    );\n\n    h.result.current.handleMousePan(point(100, 100));\n    expect(\n      h.result.current.handleMousePan({\n        type: 'iframe-mousemove',\n        bookKey: 'book-1',\n        buttons: 1,\n        screenX: 120,\n        screenY: 100,\n        rawPanHandled: true,\n      }),\n    ).toBe(true);\n    expect(view.pan).not.toHaveBeenCalled();\n\n    expect(\n      h.result.current.handleMousePan({\n        type: 'mousemove',\n        bookKey: 'book-1',\n        buttons: 1,\n        screenX: 130,\n        screenY: 100,\n      }),\n    ).toBe(true);\n    expect(view.pan).toHaveBeenCalledWith(-10, 0);\n  });\n\n"""
+          replace_once(test, marker, regressions + marker)
+
+          replace_once(
+              test,
+              """    const view = makeView(false, false);\n    const h = renderHook(() =>\n      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),\n    );\n    mocks.getBookData.mockReturnValue({ isFixedLayout: false });\n    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);""",
+              """    const view = makeView(false, false);\n    view.isFixedLayout = false;\n    view.book.rendition.layout = 'reflowable';\n    const h = renderHook(() =>\n      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),\n    );\n    mocks.getBookData.mockReturnValue({ isFixedLayout: false });\n    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);""",
+          )
+          PY
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: setup node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: format changed files
+        run: |
+          pnpm exec biome format --write \
+            apps/readest-app/src/app/reader/hooks/usePagination.ts \
+            apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts \
+            apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+
+      - name: verify repository formatting
+        run: pnpm -w format:check
+
+      - name: run fixed-layout mouse-pan regressions
+        timeout-minutes: 3
+        run: pnpm --filter @readest/readest-app exec dotenv -e .env -- vitest run src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+
+      - name: prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: typecheck frontend
+        run: pnpm --filter @readest/readest-app exec tsc --noEmit
+
+      - name: commit verified hotfix and remove one-shot workflow
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/one-shot-cbz-mouse-pan-v2.yml
+          git add \
+            apps/readest-app/src/app/reader/hooks/usePagination.ts \
+            apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts \
+            apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+          git commit -m 'fix(reader): pan fixed-layout pages in the iframe mouse stream'
+          HUSKY=0 git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: dispatch formal v0.12.6.20 release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --ref main -f tag=v0.12.6.20
+          echo "Dispatched formal release workflow for v0.12.6.20 from ${{ steps.commit.outputs.sha }}"
