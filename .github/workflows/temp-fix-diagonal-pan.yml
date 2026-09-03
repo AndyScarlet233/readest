@@ -78,6 +78,8 @@ jobs:
           PY
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
       - name: Format changed files
         run: pnpm exec biome format --write apps/readest-app/src/app/reader/hooks/usePagination.ts apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts apps/readest-app/src/__tests__/reader/utils/iframeEventHandlers.test.ts
       - name: Run focused regression tests
