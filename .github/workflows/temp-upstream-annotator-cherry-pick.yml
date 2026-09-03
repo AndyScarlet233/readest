@@ -1,0 +1,45 @@
+name: Temporary upstream annotator cherry-pick
+
+on:
+  push:
+    branches:
+      - integrate/upstream-annotator-one-tap-2026-09-03
+    paths:
+      - .github/workflows/temp-upstream-annotator-cherry-pick.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cherry-pick:
+    if: github.event.head_commit.message == 'chore: bootstrap upstream annotator merge runner'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Cherry-pick upstream annotator changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch --no-tags upstream 87bba1369bec09731f023c8c45dcdf0dd4e5511e 88ea2de55f10769207a8388d931bd84ea1df4ee6
+          for sha in 87bba1369bec09731f023c8c45dcdf0dd4e5511e 88ea2de55f10769207a8388d931bd84ea1df4ee6; do
+            if ! git cherry-pick "$sha"; then
+              echo '::group::Cherry-pick conflicts'
+              git status --short
+              git diff --name-only --diff-filter=U
+              for file in $(git diff --name-only --diff-filter=U); do
+                echo "===== $file ====="
+                git checkout --conflict=merge -- "$file" || true
+                sed -n '1,260p' "$file" || true
+              done
+              echo '::endgroup::'
+              exit 1
+            fi
+          done
+          git push origin HEAD:integrate/upstream-annotator-one-tap-2026-09-03
