@@ -12,7 +12,7 @@ jobs:
   merge-and-verify:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
@@ -44,6 +44,35 @@ jobs:
           echo "resolution_ref=$resolution_ref" >> "$GITHUB_OUTPUT"
           git show "$resolution_ref":.github/scripts/temp-upstream-sync-v4.sh > /tmp/upstream-sync-v4.sh
 
-      - name: Merge, adapt, test and publish working branch
+          # v4's first full run proved the merge, tsc, Cargo metadata and 140
+          # unit tests; pre-push then found one missing final newline in an
+          # upstream-changed file. Add an explicit full-format gate before the
+          # commit, and run the two new real-Chromium pan-lock tests through the
+          # browser config (plain vitest intentionally excludes *.browser.test).
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/upstream-sync-v4.sh')
+          text = path.read_text()
+          old = "cargo metadata --locked --format-version 1 --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null\n\ngit commit"
+          new = """pnpm --filter @readest/readest-app test:browser \\
+  src/__tests__/document/fixed-layout-pan-lock.browser.test.ts \\
+  src/__tests__/document/pdf-pan-lock.browser.test.ts
+
+python3 <<'FORMATPY'
+from pathlib import Path
+p = Path('apps/readest-app/src/app/reader/hooks/usePagination.ts')
+p.write_text(p.read_text().rstrip('\\n') + '\\n')
+FORMATPY
+git add -A
+pnpm -w format:check
+cargo metadata --locked --format-version 1 --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null
+
+git commit"""
+          if old not in text:
+              raise SystemExit('v4 insertion point changed unexpectedly')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Merge, adapt, browser-test, format-check and publish working branch
         shell: bash
         run: bash /tmp/upstream-sync-v4.sh "${{ steps.refs.outputs.resolution_ref }}"
