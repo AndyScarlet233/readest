@@ -1,0 +1,44 @@
+name: Temporary upstream gamepad cherry-pick
+
+on:
+  push:
+    branches:
+      - integrate/upstream-gamepad-complete-2026-09-03
+    paths:
+      - .github/workflows/temp-upstream-gamepad-cherry-pick.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cherry-pick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Inspect upstream gamepad cherry-pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch --no-tags upstream b12932da9a489951f2d1a0e0175ed24de61ce183
+          if ! git cherry-pick b12932da9a489951f2d1a0e0175ed24de61ce183; then
+            echo '::group::Gamepad cherry-pick conflicts'
+            git status --short
+            git diff --name-only --diff-filter=U
+            for file in $(git diff --name-only --diff-filter=U); do
+              echo "===== $file ====="
+              git checkout --conflict=merge -- "$file" || true
+              sed -n '1,360p' "$file" || true
+            done
+            echo '::endgroup::'
+            exit 1
+          fi
+          git diff --check HEAD~1..HEAD
+          git push origin HEAD:integrate/upstream-gamepad-complete-2026-09-03
