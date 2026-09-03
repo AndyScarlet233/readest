@@ -32,7 +32,7 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Fetch latest upstream and reviewed branch
+      - name: Fetch latest upstream and prepare reviewed resolver
         id: refs
         shell: bash
         run: |
@@ -46,28 +46,27 @@ jobs:
           echo "resolution_ref=$resolution_ref" >> "$GITHUB_OUTPUT"
           echo "upstream_ref=$upstream_ref" >> "$GITHUB_OUTPUT"
           git show "$resolution_ref":.github/scripts/temp-upstream-sync-v4.sh > /tmp/upstream-sync-v4.sh
-
-          # Keep the reviewed resolver immutable in the branch; retarget only the
-          # runner copy to today's upstream head, then add the final format and
-          # real-Chromium gates before it is allowed to commit/push.
           sed -i "s/$old_upstream_ref/$upstream_ref/g" /tmp/upstream-sync-v4.sh
+
           python3 <<'PY'
           from pathlib import Path
           path = Path('/tmp/upstream-sync-v4.sh')
           text = path.read_text()
           marker = "cargo metadata --locked --format-version 1 --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null\n\ngit commit"
-          inserted = """grep -q 'z-\\[43\\]' apps/readest-app/src/app/reader/components/annotator/AnnotationPopup.tsx
-grep -q 'selection-handle' apps/readest-app/src/__tests__/android/helpers/reader.ts
-
-pnpm exec biome format --write apps/readest-app/src/app/reader/hooks/usePagination.ts
-pnpm --filter @readest/readest-app exec playwright install chromium
-pnpm --filter @readest/readest-app test:browser \\
-  src/__tests__/document/fixed-layout-pan-lock.browser.test.ts \\
-  src/__tests__/document/pdf-pan-lock.browser.test.ts
-pnpm -w format:check
-cargo metadata --locked --format-version 1 --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null
-
-git commit"""
+          inserted = "\n".join([
+              "grep -q 'z-\\[43\\]' apps/readest-app/src/app/reader/components/annotator/AnnotationPopup.tsx",
+              "grep -q 'selection-handle' apps/readest-app/src/__tests__/android/helpers/reader.ts",
+              "",
+              "pnpm exec biome format --write apps/readest-app/src/app/reader/hooks/usePagination.ts",
+              "pnpm --filter @readest/readest-app exec playwright install chromium",
+              "pnpm --filter @readest/readest-app test:browser \\",
+              "  src/__tests__/document/fixed-layout-pan-lock.browser.test.ts \\",
+              "  src/__tests__/document/pdf-pan-lock.browser.test.ts",
+              "pnpm -w format:check",
+              "cargo metadata --locked --format-version 1 --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null",
+              "",
+              "git commit",
+          ])
           if marker not in text:
               raise SystemExit('verification insertion point changed unexpectedly')
           path.write_text(text.replace(marker, inserted, 1))
