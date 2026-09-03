@@ -2060,9 +2060,6 @@
   "Transfer failed": "Az átvitel sikertelen",
   "No supported book files from {{alias}}": "Nincs támogatott könyvfájl tőle: {{alias}}",
   "Receiving from {{alias}}": "Fogadás tőle: {{alias}}",
-  "{{alias}} wants to send you books": "{{alias}} könyveket szeretne küldeni Önnek",
-  "{{count}} book(s), {{size}}_one": "{{count}} könyv, {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}} könyv, {{size}}",
   "Accept": "Elfogadás",
   "and {{count}} more_one": "és még {{count}}",
   "and {{count}} more_other": "és még {{count}}",
@@ -2301,5 +2298,7 @@
   "{{name}}'s Readest": "{{name}} Readestje",
   "Gamepad Support": "Kontroller támogatása",
   "Navigate with a connected controller": "Navigálás csatlakoztatott kontrollerrel",
-  "Lock Horizontal Panning": "Vízszintes mozgatás zárolása"
+  "Lock Horizontal Panning": "Vízszintes mozgatás zárolása",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} {{count}} könyvet szeretne küldeni Önnek",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} {{count}} könyvet szeretne küldeni Önnek"
 }

@@ -2110,10 +2110,6 @@
   "Transfer failed": "ההעברה נכשלה",
   "No supported book files from {{alias}}": "אין קובצי ספרים נתמכים מ-{{alias}}",
   "Receiving from {{alias}}": "מקבל מ-{{alias}}",
-  "{{alias}} wants to send you books": "{{alias}} רוצה לשלוח לכם ספרים",
-  "{{count}} book(s), {{size}}_one": "ספר אחד, {{size}}",
-  "{{count}} book(s), {{size}}_two": "{{count}} ספרים, {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}} ספרים, {{size}}",
   "Accept": "אישור",
   "and {{count}} more_one": "ועוד אחד",
   "and {{count}} more_two": "ועוד {{count}}",
@@ -2361,5 +2357,8 @@
   "{{name}}'s Readest": "Readest של {{name}}",
   "Gamepad Support": "תמיכה בבקר משחק",
   "Navigate with a connected controller": "ניווט באמצעות בקר מחובר",
-  "Lock Horizontal Panning": "נעל הזזה אופקית"
+  "Lock Horizontal Panning": "נעל הזזה אופקית",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} רוצה לשלוח לכם ספר אחד",
+  "{{alias}} wants to send you {{count}} book(s)_two": "{{alias}} רוצה לשלוח לכם {{count}} ספרים",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} רוצה לשלוח לכם {{count}} ספרים"
 }

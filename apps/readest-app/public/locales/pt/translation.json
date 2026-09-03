@@ -2110,10 +2110,6 @@
   "Transfer failed": "Falha na transferência",
   "No supported book files from {{alias}}": "Nenhum ficheiro de livro suportado de {{alias}}",
   "Receiving from {{alias}}": "A receber de {{alias}}",
-  "{{alias}} wants to send you books": "{{alias}} quer enviar-lhe livros",
-  "{{count}} book(s), {{size}}_one": "{{count}} livro, {{size}}",
-  "{{count}} book(s), {{size}}_many": "{{count}} livros, {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}} livros, {{size}}",
   "Accept": "Aceitar",
   "and {{count}} more_one": "e mais {{count}}",
   "and {{count}} more_many": "e mais {{count}}",
@@ -2361,5 +2357,8 @@
   "{{name}}'s Readest": "Readest de {{name}}",
   "Gamepad Support": "Suporte a gamepad",
   "Navigate with a connected controller": "Navegar com um controle conectado",
-  "Lock Horizontal Panning": "Bloquear deslocamento horizontal"
+  "Lock Horizontal Panning": "Bloquear deslocamento horizontal",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} quer enviar-lhe {{count}} livro",
+  "{{alias}} wants to send you {{count}} book(s)_many": "{{alias}} quer enviar-lhe {{count}} livros",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} quer enviar-lhe {{count}} livros"
 }

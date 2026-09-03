@@ -2010,8 +2010,6 @@
   "Transfer failed": "Truyền tệp thất bại",
   "No supported book files from {{alias}}": "Không có tệp sách được hỗ trợ từ {{alias}}",
   "Receiving from {{alias}}": "Đang nhận từ {{alias}}",
-  "{{alias}} wants to send you books": "{{alias}} muốn gửi sách cho bạn",
-  "{{count}} book(s), {{size}}_other": "{{count}} cuốn sách, {{size}}",
   "Accept": "Chấp nhận",
   "and {{count}} more_other": "và {{count}} mục khác",
   "{{count}} unsupported file(s) will be skipped_other": "{{count}} tệp không được hỗ trợ sẽ bị bỏ qua",
@@ -2241,5 +2239,6 @@
   "{{name}}'s Readest": "Readest của {{name}}",
   "Gamepad Support": "Hỗ trợ tay cầm chơi game",
   "Navigate with a connected controller": "Điều hướng bằng tay cầm đã kết nối",
-  "Lock Horizontal Panning": "Khóa di chuyển ngang"
+  "Lock Horizontal Panning": "Khóa di chuyển ngang",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} muốn gửi cho bạn {{count}} cuốn sách"
 }

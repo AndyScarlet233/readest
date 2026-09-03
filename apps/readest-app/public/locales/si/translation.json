@@ -2060,9 +2060,6 @@
   "Transfer failed": "හුවමාරුව අසාර්ථක විය",
   "No supported book files from {{alias}}": "{{alias}} වෙතින් සහාය දක්වන පොත් ගොනු නැත",
   "Receiving from {{alias}}": "{{alias}} වෙතින් ලැබෙමින්",
-  "{{alias}} wants to send you books": "{{alias}} ඔබට පොත් යැවීමට කැමතියි",
-  "{{count}} book(s), {{size}}_one": "පොත් {{count}}ක්, {{size}}",
-  "{{count}} book(s), {{size}}_other": "පොත් {{count}}ක්, {{size}}",
   "Accept": "පිළිගන්න",
   "and {{count}} more_one": "තවත් {{count}}ක්",
   "and {{count}} more_other": "තවත් {{count}}ක්",
@@ -2301,5 +2298,7 @@
   "{{name}}'s Readest": "{{name}} ගේ Readest",
   "Gamepad Support": "ගේම්පෑඩ් සහාය",
   "Navigate with a connected controller": "සම්බන්ධිත පාලකයක් සමඟ සංචලනය කරන්න",
-  "Lock Horizontal Panning": "තිරස් චලනය අගුළු දමන්න"
+  "Lock Horizontal Panning": "තිරස් චලනය අගුළු දමන්න",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} ඔබට පොත් {{count}}ක් යැවීමට කැමතියි",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} ඔබට පොත් {{count}}ක් යැවීමට කැමතියි"
 }

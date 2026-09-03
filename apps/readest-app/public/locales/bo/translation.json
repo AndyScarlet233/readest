@@ -2010,8 +2010,6 @@
   "Transfer failed": "བརྒྱུད་སྐུར་ཕམ་སོང་།",
   "No supported book files from {{alias}}": "{{alias}} ནས་རྒྱབ་སྐྱོར་ཡོད་པའི་དེབ་ཡིག་ཆ་མེད།",
   "Receiving from {{alias}}": "{{alias}} ནས་ལེན་བཞིན་པ།",
-  "{{alias}} wants to send you books": "{{alias}} ཡིས་ཁྱེད་ལ་དེབ་སྐུར་འདོད་ཡོད།",
-  "{{count}} book(s), {{size}}_other": "དེབ་ {{count}}, {{size}}",
   "Accept": "དང་ལེན།",
   "and {{count}} more_other": "དང་གཞན་ {{count}}",
   "{{count}} unsupported file(s) will be skipped_other": "རྒྱབ་སྐྱོར་མེད་པའི་ཡིག་ཆ་ {{count}} མཆོང་རྒྱུ།",
@@ -2241,5 +2239,6 @@
   "{{name}}'s Readest": "{{name}}ཡི་ Readest",
   "Gamepad Support": "རྩེད་མོའི་ཚོད་འཛིན་ཆས་རྒྱབ་སྐྱོར།",
   "Navigate with a connected controller": "སྦྲེལ་ཟིན་པའི་ཚོད་འཛིན་ཆས་ཐོག་ནས་གནས་སྤོ་བྱེད་པ།",
-  "Lock Horizontal Panning": "ཐད་ཐིག་སྤོ་འགུལ་བཀག་པ།"
+  "Lock Horizontal Panning": "ཐད་ཐིག་སྤོ་འགུལ་བཀག་པ།",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} ཡིས་ཁྱེད་ལ་དེབ་ {{count}} སྐུར་འདོད་ཡོད།"
 }

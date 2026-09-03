@@ -2060,9 +2060,6 @@
   "Transfer failed": "Uzatish muvaffaqiyatsiz tugadi",
   "No supported book files from {{alias}}": "{{alias}}dan qo‘llab-quvvatlanadigan kitob fayllari yo‘q",
   "Receiving from {{alias}}": "{{alias}}dan qabul qilinmoqda",
-  "{{alias}} wants to send you books": "{{alias}} sizga kitob yubormoqchi",
-  "{{count}} book(s), {{size}}_one": "{{count}} ta kitob, {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}} ta kitob, {{size}}",
   "Accept": "Qabul qilish",
   "and {{count}} more_one": "va yana {{count}} ta",
   "and {{count}} more_other": "va yana {{count}} ta",
@@ -2301,5 +2298,7 @@
   "{{name}}'s Readest": "{{name}}ning Readest'i",
   "Gamepad Support": "Geympad qoʻllab-quvvatlashi",
   "Navigate with a connected controller": "Ulangan boshqaruv pulti bilan harakatlanish",
-  "Lock Horizontal Panning": "Gorizontal siljitishni quflash"
+  "Lock Horizontal Panning": "Gorizontal siljitishni quflash",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} sizga {{count}} ta kitob yubormoqchi",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} sizga {{count}} ta kitob yubormoqchi"
 }

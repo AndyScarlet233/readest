@@ -2060,9 +2060,6 @@
   "Transfer failed": "Överföringen misslyckades",
   "No supported book files from {{alias}}": "Inga bokfiler som stöds från {{alias}}",
   "Receiving from {{alias}}": "Tar emot från {{alias}}",
-  "{{alias}} wants to send you books": "{{alias}} vill skicka böcker till dig",
-  "{{count}} book(s), {{size}}_one": "{{count}} bok, {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}} böcker, {{size}}",
   "Accept": "Acceptera",
   "and {{count}} more_one": "och {{count}} till",
   "and {{count}} more_other": "och {{count}} till",
@@ -2301,5 +2298,7 @@
   "{{name}}'s Readest": "{{name}}s Readest",
   "Gamepad Support": "Stöd för handkontroll",
   "Navigate with a connected controller": "Navigera med en ansluten handkontroll",
-  "Lock Horizontal Panning": "Lås horisontell panorering"
+  "Lock Horizontal Panning": "Lås horisontell panorering",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} vill skicka {{count}} bok till dig",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vill skicka {{count}} böcker till dig"
 }

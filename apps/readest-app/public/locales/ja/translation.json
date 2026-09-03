@@ -2010,8 +2010,6 @@
   "Transfer failed": "転送に失敗しました",
   "No supported book files from {{alias}}": "{{alias}}からの対応している本のファイルがありません",
   "Receiving from {{alias}}": "{{alias}}から受信中",
-  "{{alias}} wants to send you books": "{{alias}}が本を送信しようとしています",
-  "{{count}} book(s), {{size}}_other": "{{count}}冊、{{size}}",
   "Accept": "受け入れる",
   "and {{count}} more_other": "ほか{{count}}件",
   "{{count}} unsupported file(s) will be skipped_other": "対応していない{{count}}件のファイルはスキップされます",
@@ -2241,5 +2239,6 @@
   "{{name}}'s Readest": "{{name}}のReadest",
   "Gamepad Support": "ゲームパッド対応",
   "Navigate with a connected controller": "接続したコントローラーで操作する",
-  "Lock Horizontal Panning": "横方向の移動をロック"
+  "Lock Horizontal Panning": "横方向の移動をロック",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}}が{{count}}冊の本を送信しようとしています"
 }

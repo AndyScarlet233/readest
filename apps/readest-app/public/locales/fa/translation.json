@@ -2060,9 +2060,6 @@
   "Transfer failed": "انتقال ناموفق بود",
   "No supported book files from {{alias}}": "هیچ فایل کتاب پشتیبانی‌شده‌ای از {{alias}} وجود ندارد",
   "Receiving from {{alias}}": "در حال دریافت از {{alias}}",
-  "{{alias}} wants to send you books": "{{alias}} می‌خواهد برای شما کتاب بفرستد",
-  "{{count}} book(s), {{size}}_one": "{{count}} کتاب، {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}} کتاب، {{size}}",
   "Accept": "پذیرفتن",
   "and {{count}} more_one": "و {{count}} مورد دیگر",
   "and {{count}} more_other": "و {{count}} مورد دیگر",
@@ -2301,5 +2298,7 @@
   "{{name}}'s Readest": "Readestِ {{name}}",
   "Gamepad Support": "پشتیبانی از دسته بازی",
   "Navigate with a connected controller": "پیمایش با دسته بازی متصل",
-  "Lock Horizontal Panning": "قفل کردن جابه‌جایی افقی"
+  "Lock Horizontal Panning": "قفل کردن جابه‌جایی افقی",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} می‌خواهد {{count}} کتاب برای شما بفرستد",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} می‌خواهد {{count}} کتاب برای شما بفرستد"
 }

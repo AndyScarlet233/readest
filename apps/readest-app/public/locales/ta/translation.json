@@ -2060,9 +2060,6 @@
   "Transfer failed": "பரிமாற்றம் தோல்வியடைந்தது",
   "No supported book files from {{alias}}": "{{alias}}-இடமிருந்து ஆதரிக்கப்படும் புத்தகக் கோப்புகள் இல்லை",
   "Receiving from {{alias}}": "{{alias}}-இடமிருந்து பெறப்படுகிறது",
-  "{{alias}} wants to send you books": "{{alias}} உங்களுக்குப் புத்தகங்களை அனுப்ப விரும்புகிறார்",
-  "{{count}} book(s), {{size}}_one": "{{count}} புத்தகம், {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}} புத்தகங்கள், {{size}}",
   "Accept": "ஏற்றுக்கொள்",
   "and {{count}} more_one": "மேலும் {{count}}",
   "and {{count}} more_other": "மேலும் {{count}}",
@@ -2301,5 +2298,7 @@
   "{{name}}'s Readest": "{{name}} இன் Readest",
   "Gamepad Support": "கேம்பேட் ஆதரவு",
   "Navigate with a connected controller": "இணைக்கப்பட்ட கன்ட்ரோலரைக் கொண்டு வழிசெலுத்தவும்",
-  "Lock Horizontal Panning": "கிடைமட்ட நகர்வைப் பூட்டவும்"
+  "Lock Horizontal Panning": "கிடைமட்ட நகர்வைப் பூட்டவும்",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} உங்களுக்கு {{count}} புத்தகத்தை அனுப்ப விரும்புகிறார்",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} உங்களுக்கு {{count}} புத்தகங்களை அனுப்ப விரும்புகிறார்"
 }

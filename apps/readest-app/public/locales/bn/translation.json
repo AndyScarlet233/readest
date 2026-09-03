@@ -2060,9 +2060,6 @@
   "Transfer failed": "স্থানান্তর ব্যর্থ হয়েছে",
   "No supported book files from {{alias}}": "{{alias}} থেকে কোনো সমর্থিত বইয়ের ফাইল নেই",
   "Receiving from {{alias}}": "{{alias}} থেকে গ্রহণ করা হচ্ছে",
-  "{{alias}} wants to send you books": "{{alias}} আপনাকে বই পাঠাতে চায়",
-  "{{count}} book(s), {{size}}_one": "{{count}}টি বই, {{size}}",
-  "{{count}} book(s), {{size}}_other": "{{count}}টি বই, {{size}}",
   "Accept": "গ্রহণ করুন",
   "and {{count}} more_one": "এবং আরও {{count}}টি",
   "and {{count}} more_other": "এবং আরও {{count}}টি",
@@ -2301,5 +2298,7 @@
   "{{name}}'s Readest": "{{name}}-এর Readest",
   "Gamepad Support": "গেমপ্যাড সমর্থন",
   "Navigate with a connected controller": "সংযুক্ত কন্ট্রোলার দিয়ে নেভিগেট করুন",
-  "Lock Horizontal Panning": "অনুভূমিক প্যানিং লক করুন"
+  "Lock Horizontal Panning": "অনুভূমিক প্যানিং লক করুন",
+  "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} আপনাকে {{count}}টি বই পাঠাতে চায়",
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} আপনাকে {{count}}টি বই পাঠাতে চায়"
 }
