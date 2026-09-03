@@ -1,0 +1,110 @@
+# Fast pull-request gate for Windows/MSVC. Full Windows and Android packaging
+# belongs to release.yml so ordinary PRs do not spend tens of minutes building
+# installers/APKs that are immediately discarded.
+name: "Windows MSVC Quick Test"
+run-name: "MSVC 快速测试 · ${{ github.ref_name }} · #${{ github.run_number }}"
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/msvc-test.yml'
+      - 'apps/readest-app/**'
+      - 'packages/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: msvc-quick-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: '1'
+
+jobs:
+  windows-msvc:
+    name: Windows x64 MSVC Quick Test
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      NODE_OPTIONS: '--max-old-space-size=8192'
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_APP_PLATFORM: tauri
+      NEXT_PUBLIC_POSTHOG_KEY: ''
+      SENTRY_DSN: ''
+
+    steps:
+      - name: Checkout tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust stable MSVC
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          key: quick-windows-x86_64-msvc
+
+      - name: Print toolchain versions
+        shell: pwsh
+        run: |
+          node --version
+          pnpm --version
+          rustc -Vv
+          cargo -V
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: Write deterministic test environment
+        shell: pwsh
+        run: |
+          @'
+          NEXT_PUBLIC_APP_PLATFORM=tauri
+          NEXT_PUBLIC_POSTHOG_KEY=
+          NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key
+          SENTRY_DSN=
+          '@ | Set-Content -Encoding utf8 .env.local
+          Copy-Item .env.local apps/readest-app/.env.local -Force
+
+      - name: TypeScript typecheck
+        run: pnpm --filter @readest/readest-app exec tsc --noEmit
+
+      - name: Reader interaction regression tests
+        run: pnpm --filter @readest/readest-app exec vitest run src/__tests__/components/ImageViewer.test.tsx src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts src/__tests__/reader/utils/iframeEventHandlers.test.ts --maxWorkers=2
+
+      - name: Rust MSVC compile check
+        run: cargo check -p Readest --target x86_64-pc-windows-msvc
+
+      - name: Rust MSVC unit tests
+        run: cargo test -p Readest --lib --target x86_64-pc-windows-msvc

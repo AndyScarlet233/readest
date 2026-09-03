@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEnv } from '@/context/EnvContext';
 import { FoliateView } from '@/types/view';
 import { ViewSettings } from '@/types/book';
@@ -19,6 +19,11 @@ import { isTauriAppPlatform } from '@/services/environment';
 import { tauriGetWindowLogicalPosition } from '@/utils/window';
 import { getReadingRulerMoveDirection } from '../utils/readingRuler';
 import { useTouchInterceptor } from './useTouchInterceptor';
+import {
+  setMousePanArmed,
+  setMousePanClaimed,
+  suppressMousePanClick,
+} from '../utils/iframeEventHandlers';
 
 export type ScrollSource = 'touch' | 'mouse';
 
@@ -34,17 +39,50 @@ const swapLeftRight = (side: PaginationSide) => {
 const isPanningView = (view: FoliateView | null, viewSettings: ViewSettings | null | undefined) => {
   if (!view || !viewSettings) return false;
   return (
-    view.book.rendition?.layout === 'pre-paginated' &&
+    view.book?.rendition?.layout === 'pre-paginated' &&
     (viewSettings.zoomLevel > 100 || viewSettings.zoomMode !== 'fit-page')
   );
 };
 
-const hasHorizontalPanning = (
+// The live Foliate view is authoritative for gesture admission. Store metadata
+// can briefly lag a mounted CBZ view during open/recreate, and must not erase a
+// raw iframe drag session that already started on a foliate-fxl renderer.
+const isFixedLayoutView = (view: FoliateView | null, storedFixedLayout?: boolean) =>
+  Boolean(
+    storedFixedLayout || view?.isFixedLayout || view?.book?.rendition?.layout === 'pre-paginated',
+  );
+
+// Fit-page fixed-layout documents have no overflow to scroll, but a horizontal
+// drag is still a page gesture. Give that gesture immediate visual feedback by
+// translating the renderer itself while the button is held. Use CSS `translate`
+// rather than `transform` so Foliate's own transforms remain untouched.
+const setMousePageDragPreview = (view: FoliateView | null, deltaX: number) => {
+  const renderer = view?.renderer as HTMLElement | undefined;
+  if (!renderer?.style) return;
+  const width = renderer.clientWidth || window.innerWidth || 800;
+  const clampedX = Math.max(-width * 0.45, Math.min(width * 0.45, deltaX));
+  renderer.style.translate = `${clampedX}px 0`;
+  renderer.style.willChange = 'translate';
+};
+
+const clearMousePageDragPreview = (view: FoliateView | null) => {
+  const renderer = view?.renderer as HTMLElement | undefined;
+  if (!renderer?.style) return;
+  renderer.style.translate = '';
+  renderer.style.willChange = '';
+};
+
+export const hasHorizontalPanning = (
   view: FoliateView | null,
   viewSettings: ViewSettings | null | undefined,
 ) => {
   if (!view || !viewSettings) return false;
-  return isPanningView(view, viewSettings) && view.isOverflowX();
+  return (
+    view.book?.rendition?.layout === 'pre-paginated' &&
+    !viewSettings.scrolled &&
+    typeof view.isOverflowX === 'function' &&
+    view.isOverflowX()
+  );
 };
 
 export const hasVerticalPanning = (
@@ -52,7 +90,12 @@ export const hasVerticalPanning = (
   viewSettings: ViewSettings | null | undefined,
 ) => {
   if (!view || !viewSettings) return false;
-  return isPanningView(view, viewSettings) && view.isOverflowY();
+  return (
+    view.book?.rendition?.layout === 'pre-paginated' &&
+    !viewSettings.scrolled &&
+    typeof view.isOverflowY === 'function' &&
+    view.isOverflowY()
+  );
 };
 
 // In scrolled mode, snap the page-scroll distance to whole lines so the new view
@@ -158,7 +201,7 @@ export const viewPagination = (
         const snapped =
           viewSettings.vertical ||
           (viewSettings.scrolledDirection === 'horizontal' &&
-            view.book.rendition?.layout === 'pre-paginated')
+            view.book?.rendition?.layout === 'pre-paginated')
             ? distance
             : snapScrolledDistanceToLines(view, distance, forward);
         return forward ? view.next(snapped) : view.prev(snapped);
@@ -217,6 +260,194 @@ export const usePagination = (
   // the ttsPlaying state directly without going stale. This ref mirrors it for
   // the volume-key page-flip guard.
   const ttsPlayingRef = useRef(false);
+  const mousePanRef = useRef<{
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    horizontal: boolean;
+    vertical: boolean;
+    claimed: boolean;
+    mode: 'pan' | 'page' | null;
+    pageDeltaX: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    const settings = getViewSettings(bookKey);
+    const data = getBookData(bookKey);
+    const horizontal = hasHorizontalPanning(view, settings);
+    const vertical = hasVerticalPanning(view, settings);
+    // Track the whole primary-button lifetime for fixed-layout pages. Overflow can
+    // change after resize/zoom, so it must not be a hard gate for starting a drag.
+    setMousePanArmed(
+      bookKey,
+      Boolean(isFixedLayoutView(view, data?.isFixedLayout) && !settings?.scrolled),
+      { horizontal, vertical },
+    );
+    return () => {
+      clearMousePageDragPreview(view);
+      mousePanRef.current = null;
+      setMousePanArmed(bookKey, false);
+      setMousePanClaimed(bookKey, false);
+    };
+  }, [bookKey, getBookData, getViewSettings, viewRef]);
+
+  type MousePanEvent = {
+    type:
+      | 'iframe-mousedown'
+      | 'iframe-mousemove'
+      | 'iframe-mouseup'
+      | 'mousemove'
+      | 'mouseup'
+      | 'blur';
+    bookKey?: string;
+    button?: number;
+    buttons?: number;
+    screenX?: number;
+    screenY?: number;
+    hasTextSelection?: boolean;
+    rawPanHandled?: boolean;
+    preventDefault?: () => void;
+  };
+
+  const handleMousePan = useCallback(
+    (event: MousePanEvent): boolean => {
+      if (event.bookKey && event.bookKey !== bookKey) return false;
+      const view = viewRef.current;
+      const settings = getViewSettings(bookKey);
+      const data = getBookData(bookKey);
+      const finish = (commitPageTurn = false) => {
+        const state = mousePanRef.current;
+        if (state?.mode === 'page') clearMousePageDragPreview(view);
+        mousePanRef.current = null;
+        setMousePanArmed(bookKey, false);
+        setMousePanClaimed(bookKey, false);
+        if (
+          commitPageTurn &&
+          state?.claimed &&
+          state.mode === 'page' &&
+          Math.abs(state.pageDeltaX) >= 30
+        ) {
+          viewPagination(view, settings, state.pageDeltaX > 0 ? 'left' : 'right');
+        }
+        if (
+          state?.claimed &&
+          event.type === 'iframe-mouseup' &&
+          event.button === 0 &&
+          event.screenX != null &&
+          event.screenY != null
+        ) {
+          suppressMousePanClick(bookKey, event.screenX, event.screenY);
+        }
+        return Boolean(state?.claimed);
+      };
+
+      if (event.type === 'blur') return finish();
+      if (event.type === 'iframe-mousedown') {
+        mousePanRef.current = null;
+        setMousePanClaimed(bookKey, false);
+        const canTrack = Boolean(
+          isFixedLayoutView(view, data?.isFixedLayout) &&
+            !settings?.scrolled &&
+            event.button === 0 &&
+            !event.hasTextSelection,
+        );
+        const horizontal = hasHorizontalPanning(view, settings);
+        const vertical = hasVerticalPanning(view, settings);
+        setMousePanArmed(bookKey, canTrack, { horizontal, vertical });
+        if (!canTrack || event.screenX == null || event.screenY == null) return false;
+        mousePanRef.current = {
+          startX: event.screenX,
+          startY: event.screenY,
+          lastX: event.screenX,
+          lastY: event.screenY,
+          horizontal,
+          vertical,
+          claimed: false,
+          mode: null,
+          pageDeltaX: 0,
+        };
+        return false;
+      }
+      const state = mousePanRef.current;
+      if (!state) return false;
+      if (event.type === 'mouseup' || event.type === 'iframe-mouseup') return finish(true);
+      if (
+        (event.type === 'mousemove' || event.type === 'iframe-mousemove') &&
+        event.buttons != null &&
+        (event.buttons & 1) === 0
+      ) {
+        return finish(true);
+      }
+      const horizontalPan = hasHorizontalPanning(view, settings);
+      const verticalPan = hasVerticalPanning(view, settings);
+      if (!isFixedLayoutView(view, data?.isFixedLayout) || settings?.scrolled) {
+        if (state.mode === 'page') clearMousePageDragPreview(view);
+        mousePanRef.current = null;
+        setMousePanArmed(bookKey, false);
+        setMousePanClaimed(bookKey, false);
+        return false;
+      }
+      // Keep the session alive while layout catches up. Overflowed fixed-layout pages
+      // pan in place; a fit-page comic with no overflow still owns a horizontal
+      // drag as a page-swipe gesture, matching the touch path instead of feeling dead.
+      setMousePanArmed(bookKey, true, { horizontal: horizontalPan, vertical: verticalPan });
+      const canPageDrag = !settings?.disableSwipe && !isPanningView(view, settings);
+      if (!horizontalPan && !verticalPan && !canPageDrag) return false;
+      if (event.screenX == null || event.screenY == null) return false;
+      const totalX = event.screenX - state.startX;
+      const totalY = event.screenY - state.startY;
+      state.pageDeltaX = totalX;
+      if (!state.claimed) {
+        const distance = Math.hypot(totalX, totalY);
+        if (distance < 6) return false;
+        const horizontalDominant = Math.abs(totalX) >= Math.abs(totalY);
+        const verticalDominant = Math.abs(totalY) > Math.abs(totalX);
+        if (horizontalPan && verticalPan) {
+          // When the zoomed fixed-layout page overflows in both directions, keep
+          // both deltas. Dominant-axis detection is only gesture arbitration; it
+          // must not become a permanent axis lock for free panning.
+          state.horizontal = true;
+          state.vertical = true;
+          state.mode = 'pan';
+        } else if (horizontalPan && horizontalDominant) {
+          state.horizontal = true;
+          state.vertical = false;
+          state.mode = 'pan';
+        } else if (verticalPan && verticalDominant) {
+          state.horizontal = false;
+          state.vertical = true;
+          state.mode = 'pan';
+        } else if (canPageDrag && horizontalDominant && Math.abs(totalX) >= 10) {
+          state.horizontal = true;
+          state.vertical = false;
+          state.mode = 'page';
+        } else {
+          return false;
+        }
+        state.claimed = true;
+        setMousePanClaimed(bookKey, true);
+      }
+      if (state.mode === 'page') {
+        setMousePageDragPreview(view, totalX);
+        event.preventDefault?.();
+        return true;
+      }
+      const dx = event.screenX - state.lastX;
+      const dy = event.screenY - state.lastY;
+      state.lastX = event.screenX;
+      state.lastY = event.screenY;
+      // Raw iframe moves pan the foliate-fxl host synchronously. Parent-window
+      // moves (pointer left the iframe) still use view.pan as the continuation.
+      if (!event.rawPanHandled) {
+        view?.pan(state.horizontal && dx !== 0 ? -dx : 0, state.vertical && dy !== 0 ? -dy : 0);
+      }
+      event.preventDefault?.();
+      return true;
+    },
+    [bookKey, getBookData, getViewSettings, viewRef],
+  );
 
   const handlePageFlip = async (
     msg: MessageEvent | CustomEvent | React.MouseEvent<HTMLDivElement, MouseEvent>,
@@ -577,5 +808,6 @@ export const usePagination = (
 
   return {
     handlePageFlip,
+    handleMousePan,
   };
 };
