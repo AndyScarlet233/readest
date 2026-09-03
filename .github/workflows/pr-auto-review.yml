@@ -52,8 +52,9 @@ jobs:
             if (has('apps/readest-app/src-tauri/')) categories.push('Tauri/Rust 桌面端');
             if (has('packages/foliate-js/')) categories.push('Foliate 渲染器');
             if (has('packages/') && !has('packages/foliate-js/')) categories.push('共享包');
-            if (exact('.github/workflows/msvc-test.yml')) categories.push('Windows/MSVC 与 Android 测试工作流');
-            else if (has('.github/workflows/')) categories.push('GitHub Actions');
+            if (exact('.github/workflows/msvc-test.yml')) categories.push('Windows/MSVC 快速测试工作流');
+            if (exact('.github/workflows/release.yml')) categories.push('Release 完整打包工作流');
+            else if (has('.github/workflows/') && !exact('.github/workflows/msvc-test.yml')) categories.push('GitHub Actions');
             if (matches(/(^|\/)package\.json$/) || exact('pnpm-lock.yaml') || exact('pnpm-workspace.yaml')) categories.push('JavaScript 依赖/工作区');
             if (exact('Cargo.toml') || exact('Cargo.lock') || matches(/(^|\/)Cargo\.toml$/)) categories.push('Rust 依赖/工作区');
             if (has('data/icons/')) categories.push('应用图标/资源');
@@ -64,8 +65,9 @@ jobs:
             if (files.length >= 80) risks.push(`变更文件较多（${files.length} 个），建议按提交或功能块审查。`);
             if (changedLines >= 5000) risks.push(`改动行数较大（${changedLines} 行），建议确认不存在无意的大范围格式化。`);
             if (has('.github/workflows/')) risks.push('修改了工作流，请重点检查权限、触发条件、并发策略以及第三方 Action 是否固定到可信提交。');
-            if (exact('.github/workflows/msvc-test.yml')) risks.push('修改了平台测试工作流，请确认 Windows x64 MSVC 与 Android arm64 两条链路都能完成，并检查临时签名/测试环境没有使用生产密钥。');
-            if (has('apps/readest-app/src-tauri/')) risks.push('涉及 Tauri/Rust 桌面端，请确认 cargo check/test 与 Windows MSVC 打包通过。');
+            if (exact('.github/workflows/msvc-test.yml')) risks.push('修改了 MSVC 快速门禁，请确认它只做类型检查、回归测试和 MSVC compile/test，不重新引入安装包、APK、签名或上传制品等耗时发布步骤。');
+            if (exact('.github/workflows/release.yml')) risks.push('修改了 Release 完整打包流程，请确认 Windows NSIS 与 Android arm64 都从同一冻结的 main 提交构建，并重点检查签名、版本号与发布权限。');
+            if (has('apps/readest-app/src-tauri/')) risks.push('涉及 Tauri/Rust 桌面端，请先通过 Windows MSVC 快速 compile/test；正式发布前再由 Release 工作流完成 Windows 与 Android 完整打包。');
             if (has('packages/foliate-js/')) risks.push('涉及 Foliate 渲染器子模块或接口，请重点检查固定版式、分页、iframe 事件与缩放行为。');
             if (has('apps/readest-app/src/app/reader/') && has('apps/readest-app/src/__tests__/')) risks.push('阅读器核心与回归测试同时修改，请确认测试覆盖真实交互路径而不只是 mock 行为。');
             if (matches(/mouse|pointer|touch|pagination|iframe/i) || names.some((name) => /mouse|pointer|touch|pagination|iframe/i.test(name))) risks.push('疑似输入/分页手势改动，请确认按下、移动、释放、离开 iframe、点击抑制以及横纵双轴拖动均无回归。');
@@ -74,10 +76,10 @@ jobs:
 
             const recommended = ['快速检查'];
             if (has('apps/readest-app/') || has('packages/') || exact('.github/workflows/msvc-test.yml') || exact('Cargo.toml') || exact('Cargo.lock')) {
-              recommended.push('Windows x64 MSVC');
+              recommended.push('Windows x64 MSVC 快速测试');
             }
-            if (has('apps/readest-app/') || has('packages/') || exact('.github/workflows/msvc-test.yml')) {
-              recommended.push('Android arm64');
+            if (exact('.github/workflows/release.yml')) {
+              recommended.push('Release Windows + Android 完整打包');
             }
             if (has('apps/readest-app/src/app/reader/') || has('packages/foliate-js/')) {
               recommended.push('阅读器回归测试');
