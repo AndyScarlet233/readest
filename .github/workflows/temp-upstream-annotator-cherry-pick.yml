@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   cherry-pick:
-    if: github.event.head_commit.message == 'chore: bootstrap upstream annotator merge runner'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout integration branch
