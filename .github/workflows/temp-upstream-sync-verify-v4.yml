@@ -44,35 +44,43 @@ jobs:
           echo "resolution_ref=$resolution_ref" >> "$GITHUB_OUTPUT"
           git show "$resolution_ref":.github/scripts/temp-upstream-sync-v4.sh > /tmp/upstream-sync-v4.sh
 
-          # v4's first full run proved the merge, tsc, Cargo metadata and 140
-          # unit tests; pre-push then found one missing final newline in an
-          # upstream-changed file. Add an explicit full-format gate before the
-          # commit, and run the two new real-Chromium pan-lock tests through the
-          # browser config (plain vitest intentionally excludes *.browser.test).
-          python3 <<'PY'
-          from pathlib import Path
-          path = Path('/tmp/upstream-sync-v4.sh')
-          text = path.read_text()
-          old = "cargo metadata --locked --format-version 1 --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null\n\ngit commit"
-          new = """pnpm --filter @readest/readest-app test:browser \\
-  src/__tests__/document/fixed-layout-pan-lock.browser.test.ts \\
-  src/__tests__/document/pdf-pan-lock.browser.test.ts
-
-python3 <<'FORMATPY'
-from pathlib import Path
-p = Path('apps/readest-app/src/app/reader/hooks/usePagination.ts')
-p.write_text(p.read_text().rstrip('\\n') + '\\n')
-FORMATPY
-git add -A
-pnpm -w format:check
-cargo metadata --locked --format-version 1 --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null
-
-git commit"""
-          if old not in text:
-              raise SystemExit('v4 insertion point changed unexpectedly')
-          path.write_text(text.replace(old, new, 1))
-          PY
-
-      - name: Merge, adapt, browser-test, format-check and publish working branch
+      - name: Merge, adapt and run unit verification
+        id: merge
+        continue-on-error: true
         shell: bash
         run: bash /tmp/upstream-sync-v4.sh "${{ steps.refs.outputs.resolution_ref }}"
+
+      - name: Recover verified merge from format-only push failure
+        if: steps.merge.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_REF=46eca1f3fdaa3c23bf1f683019c0ad5cfbc9ce7f
+          test "$(git log -1 --format=%s)" = "chore: sync upstream main through 2026-09-03"
+          test "$(git rev-parse HEAD^2)" = "$UPSTREAM_REF"
+
+          # The previous run proved the only pre-push formatter delta was the
+          # missing final newline in this upstream-changed reader hook.
+          pnpm exec biome format --write apps/readest-app/src/app/reader/hooks/usePagination.ts
+          git add -A
+
+          # These are intentionally excluded by normal vitest and must use the
+          # real-Chromium browser config.
+          pnpm --filter @readest/readest-app test:browser \
+            src/__tests__/document/fixed-layout-pan-lock.browser.test.ts \
+            src/__tests__/document/pdf-pan-lock.browser.test.ts
+
+          pnpm -w format:check
+          cargo metadata --locked --format-version 1 \
+            --manifest-path apps/readest-app/src-tauri/Cargo.toml --no-deps > /dev/null
+          git commit --amend --no-edit
+          git push \
+            --force-with-lease=refs/heads/sync-upstream-2026-09-02:"${{ steps.refs.outputs.resolution_ref }}" \
+            origin HEAD:refs/heads/sync-upstream-2026-09-02
+
+      - name: Require expected merge path
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git log -1 --format=%s)" = "chore: sync upstream main through 2026-09-03"
+          test "$(git rev-parse HEAD^2)" = "46eca1f3fdaa3c23bf1f683019c0ad5cfbc9ce7f"
