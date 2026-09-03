@@ -1,0 +1,131 @@
+name: "Readest PR 自动审查"
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-auto-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: 变更范围与风险审查
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 生成自动审查摘要
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const marker = '<!-- readest-auto-review -->';
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = pr.number;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100,
+            });
+
+            const additions = files.reduce((sum, file) => sum + file.additions, 0);
+            const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
+            const changedLines = additions + deletions;
+            const names = files.map((file) => file.filename);
+
+            const has = (prefix) => names.some((name) => name.startsWith(prefix));
+            const exact = (name) => names.includes(name);
+            const matches = (regex) => names.some((name) => regex.test(name));
+
+            const categories = [];
+            if (has('apps/readest-app/src/app/reader/') || has('apps/readest-app/src/components/')) categories.push('阅读器前端');
+            if (has('apps/readest-app/src-tauri/')) categories.push('Tauri/Rust 桌面端');
+            if (has('packages/foliate-js/')) categories.push('Foliate 渲染器');
+            if (has('packages/') && !has('packages/foliate-js/')) categories.push('共享包');
+            if (exact('.github/workflows/msvc-test.yml')) categories.push('Windows/MSVC 与 Android 测试工作流');
+            else if (has('.github/workflows/')) categories.push('GitHub Actions');
+            if (matches(/(^|\/)package\.json$/) || exact('pnpm-lock.yaml') || exact('pnpm-workspace.yaml')) categories.push('JavaScript 依赖/工作区');
+            if (exact('Cargo.toml') || exact('Cargo.lock') || matches(/(^|\/)Cargo\.toml$/)) categories.push('Rust 依赖/工作区');
+            if (has('data/icons/')) categories.push('应用图标/资源');
+            if (has('apps/readest-app/src/__tests__/')) categories.push('自动化测试');
+            if (categories.length === 0) categories.push('其他文件');
+
+            const risks = [];
+            if (files.length >= 80) risks.push(`变更文件较多（${files.length} 个），建议按提交或功能块审查。`);
+            if (changedLines >= 5000) risks.push(`改动行数较大（${changedLines} 行），建议确认不存在无意的大范围格式化。`);
+            if (has('.github/workflows/')) risks.push('修改了工作流，请重点检查权限、触发条件、并发策略以及第三方 Action 是否固定到可信提交。');
+            if (exact('.github/workflows/msvc-test.yml')) risks.push('修改了平台测试工作流，请确认 Windows x64 MSVC 与 Android arm64 两条链路都能完成，并检查临时签名/测试环境没有使用生产密钥。');
+            if (has('apps/readest-app/src-tauri/')) risks.push('涉及 Tauri/Rust 桌面端，请确认 cargo check/test 与 Windows MSVC 打包通过。');
+            if (has('packages/foliate-js/')) risks.push('涉及 Foliate 渲染器子模块或接口，请重点检查固定版式、分页、iframe 事件与缩放行为。');
+            if (has('apps/readest-app/src/app/reader/') && has('apps/readest-app/src/__tests__/')) risks.push('阅读器核心与回归测试同时修改，请确认测试覆盖真实交互路径而不只是 mock 行为。');
+            if (matches(/mouse|pointer|touch|pagination|iframe/i) || names.some((name) => /mouse|pointer|touch|pagination|iframe/i.test(name))) risks.push('疑似输入/分页手势改动，请确认按下、移动、释放、离开 iframe、点击抑制以及横纵双轴拖动均无回归。');
+            if (exact('pnpm-lock.yaml') || exact('Cargo.lock')) risks.push('锁文件发生变化，请确认依赖升级是有意的，并检查平台构建是否仍可复现。');
+            if (/同步|上游|upstream|sync/i.test(pr.title)) risks.push('疑似上游同步 PR，建议保留可追溯的提交边界并重点检查本地定制是否被覆盖。');
+
+            const recommended = ['快速检查'];
+            if (has('apps/readest-app/') || has('packages/') || exact('.github/workflows/msvc-test.yml') || exact('Cargo.toml') || exact('Cargo.lock')) {
+              recommended.push('Windows x64 MSVC');
+            }
+            if (has('apps/readest-app/') || has('packages/') || exact('.github/workflows/msvc-test.yml')) {
+              recommended.push('Android arm64');
+            }
+            if (has('apps/readest-app/src/app/reader/') || has('packages/foliate-js/')) {
+              recommended.push('阅读器回归测试');
+            }
+
+            const riskText = risks.length > 0
+              ? risks.map((risk) => `- ⚠️ ${risk}`).join('\n')
+              : '- ✅ 未发现明显的结构性高风险信号。';
+
+            const body = `${marker}
+            ## 🤖 Readest 自动审查
+
+            本次 PR 共修改 **${files.length}** 个文件，新增 **${additions}** 行，删除 **${deletions}** 行。
+
+            **变更范围：** ${[...new Set(categories)].join('、')}
+
+            **自动风险提示：**
+            ${riskText}
+
+            **建议至少通过：** ${[...new Set(recommended)].join('、')}
+
+            这是免费的规则型自动审查，只负责快速发现范围、平台和集成风险，不替代人工代码审查。每次向 PR 推送新提交后，这条摘要都会自动刷新。`;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pull_number,
+              per_page: 100,
+            });
+
+            const previous = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+              core.info(`Updated automatic review comment ${previous.id}.`);
+            } else {
+              const created = await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pull_number,
+                body,
+              });
+              core.info(`Created automatic review comment ${created.data.id}.`);
+            }
