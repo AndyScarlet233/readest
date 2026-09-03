@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "zh-CN"
+tone_instructions: "简洁、技术性、先验证再评论；优先报告有明确正确性、安全性、跨平台或回归影响的问题，避免纯格式和个人偏好型噪声。"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  in_progress_fortune: false
+  poem: false
+  enable_prompt_for_ai_agents: true
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "integrate-upstream-.*"
+
+  path_instructions:
+    - path: "**"
+      instructions: |
+        这是 readest/readest 的长期维护 fork。对上游同步或 integration PR，优先保留上游改进，同时保护已经明确存在的 fork 定制；不要因为“与上游不同”就建议整文件覆盖。
+        Fork 的关键本地约束包括：PR 快速 MSVC 门禁、独立 Release 完整打包流程、PR 自动审查、CodeRabbit 配置，以及固定版式阅读器的鼠标拖拽回归修复。
+        冲突解决应尽量小而可追溯；不要顺手做与 PR 目标无关的重构、抽象或格式化。
+
+    - path: ".github/workflows/**"
+      instructions: |
+        GitHub Actions 权限遵循最小权限；第三方 Action 应固定到可信 commit SHA。
+        特别审查 pull_request_target：不得 checkout、执行或 eval 不受信任 PR head 的代码；如果只是通过 GitHub API 读取 diff/文件列表可以接受。
+        不要把测试环境的假密钥、临时签名材料误认为生产凭据；但任何真实发布 secret 都不应出现在 PR 测试工作流中。
+
+    - path: ".github/workflows/msvc-test.yml"
+      instructions: |
+        这是 PR 的快速 Windows x64 MSVC 门禁，不是发布构建。
+        应保持为 TypeScript/相关回归测试 + Rust MSVC cargo check/test 等快速验证；若重新加入 NSIS 安装包、Android APK、发布签名、上传发布制品或长时间完整打包，应明确指出。
+        目标是尽快判断 PR 能否合并；完整 Windows/Android 构建由 release.yml 负责。
+
+    - path: ".github/workflows/release.yml"
+      instructions: |
+        这是唯一负责正式完整打包/发布的工作流。Windows NSIS 与 Android arm64 应基于同一个冻结的 main commit 构建，避免长构建过程中 main 漂移。
+        检查版本号、Android versionCode、稳定签名材料、发布权限、产物命名和失败条件；生产签名 secret 只应在确实需要的发布步骤使用。
+        不要建议把完整打包复制回 msvc-test.yml。
+
+    - path: "apps/readest-app/src/app/reader/**"
+      instructions: |
+        阅读器交互改动必须重点检查鼠标/指针生命周期、分页、iframe 边界、缩放和 fixed-layout 行为。
+        对放大后横纵两个方向同时溢出的固定版式页面，鼠标平移必须保留 X/Y 两个增量，允许真正的斜向拖动；只有单轴可滚动时才应做单轴仲裁。
+        拖动只能在有效按下状态持续；mouseup/pointerup、cancel、离开或失焦后必须清理状态，禁止松开后图片继续跟随鼠标。
+        不要让 raw pan 或 iframe 事件把合法斜向平移误判成翻页；同时检查点击抑制、边界翻页和现有触控行为是否回归。
+
+    - path: "apps/readest-app/src/__tests__/**"
+      instructions: |
+        遵循上游的 test-first 习惯：修 bug 时应有能在修复前失败、修复后通过的回归测试。
+        测试应验证真实行为边界而不只是 mock 调用。阅读器输入相关测试优先覆盖 press/move/release/cancel/leave、点击抑制，以及横纵双轴拖动。
+        避免为了让测试通过而削弱断言或复制实现逻辑到测试中。
+
+    - path: "apps/readest-app/src-tauri/**"
+      instructions: |
+        注意 Tauri v2 与 Windows/Android 等平台差异。Rust/Tauri 改动至少应能通过对应 fmt/clippy/check/test；PR 阶段优先快速 MSVC 验证，正式平台安装包由 Release 流程验证。
+        警惕平台特定路径、权限、资源和签名逻辑被只在单一平台上工作的改动破坏。
+
+    - path: "packages/foliate-js"
+      instructions: |
+        该路径在父仓库中是 Git submodule 指针。父仓库通常只应审查 submodule commit 的变化及其与 Readest 接口兼容性；实际 foliate-js 源码修改应在对应子模块仓库中完成并审查。
+        对 fixed-layout、分页、iframe、缩放/平移相关指针更新，重点检查是否会覆盖本 fork 已验证的阅读器交互行为。
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/CLAUDE.md"
+      - "**/.claude/rules/*.md"
+      - "**/DESIGN.md"
+
+chat:
+  auto_reply: true
