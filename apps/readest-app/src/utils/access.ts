@@ -10,7 +10,8 @@ interface Token {
   plan: UserPlan;
   storage_usage_bytes: number;
   storage_purchased_bytes: number;
-  [key: string]: string | number;
+  customization_purchased: boolean;
+  [key: string]: string | number | boolean;
 }
 
 export const getSubscriptionPlan = (token: string): UserPlan => {
@@ -28,6 +29,16 @@ export const getUserProfilePlan = (token: string): UserPlan => {
     }
   }
   return plan;
+};
+
+/**
+ * Whether the account has bought the Full Customization unlock, as minted into
+ * the access token by the server-side entitlement flow. Tokens issued before
+ * the claim existed simply read as not purchased.
+ */
+export const getCustomizationPurchased = (token: string): boolean => {
+  const data = jwtDecode<Token>(token) || {};
+  return data['customization_purchased'] === true;
 };
 
 /**
