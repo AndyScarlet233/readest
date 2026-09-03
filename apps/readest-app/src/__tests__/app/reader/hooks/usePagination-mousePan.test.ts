@@ -78,7 +78,7 @@ afterEach(() => cleanup());
 
 describe('usePagination fixed-layout mouse pan', () => {
   test('claims after threshold and pans incrementally with opposite screen delta', () => {
-    const view = makeView();
+    const view = makeView(true, false);
     const h = renderHook(() =>
       usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
     );
@@ -117,6 +117,25 @@ describe('usePagination fixed-layout mouse pan', () => {
         screenY: 101,
       }),
     ).toBe(true);
+  });
+
+  test('preserves both deltas when a fixed-layout page overflows on both axes', () => {
+    const view = makeView(true, true);
+    const h = renderHook(() =>
+      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),
+    );
+
+    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);
+    expect(
+      h.result.current.handleMousePan({
+        type: 'mousemove',
+        bookKey: 'book-1',
+        buttons: 1,
+        screenX: 124,
+        screenY: 118,
+      }),
+    ).toBe(true);
+    expect(view.pan).toHaveBeenCalledWith(-24, -18);
   });
 
   test('keeps a fixed-layout drag alive until overflow becomes available', () => {

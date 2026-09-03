@@ -351,6 +351,27 @@ describe('iframeEventHandlers touch forwarding', () => {
     );
   });
 
+  test('raw fixed-layout mouse pan preserves diagonal movement with dual overflow', async () => {
+    const { handleMousedown, handleMousemove } = await importHandlers();
+    const { host, frameDocument } = fixedLayoutFrame({
+      isOverflowX: true,
+      isOverflowY: true,
+    });
+    const pan = vi.fn();
+    (host as typeof host & { pan: (dx: number, dy: number) => void }).pan = pan;
+
+    const start = mouseEvent({ buttons: 1, screenX: 100, screenY: 100 });
+    Object.defineProperty(start, 'currentTarget', { configurable: true, value: frameDocument });
+    handleMousedown('book-1', start);
+
+    const move = mouseEvent({ buttons: 1, screenX: 112, screenY: 109 });
+    Object.defineProperty(move, 'currentTarget', { configurable: true, value: frameDocument });
+    handleMousemove('book-1', move);
+
+    expect(pan).toHaveBeenCalledWith(-12, -9);
+    expect(move.preventDefault).toHaveBeenCalledOnce();
+  });
+
   test('raw fixed-layout mouse pan claims the first move and suppresses its click', async () => {
     const { handleClick, handleMousedown, handleMousemove, handleMouseup, setMousePanArmed } =
       await importHandlers();
