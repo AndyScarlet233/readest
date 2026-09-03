@@ -1,0 +1,58 @@
+name: Temporary reader rendering verification
+
+on:
+  push:
+    branches:
+      - integrate/upstream-reader-rendering-2026-09-03
+    paths:
+      - .github/workflows/temp-upstream-reader-rendering-verify.yml
+
+permissions:
+  contents: read
+
+jobs:
+  focused-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout tested branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: Install Chromium
+        run: pnpm --filter @readest/readest-app exec playwright install --with-deps chromium
+
+      - name: Run fixed-layout and style unit regressions
+        run: >-
+          pnpm --filter @readest/readest-app exec vitest run
+          src/__tests__/document/fixed-layout-paginated-scroll.test.ts
+          src/__tests__/utils/style-dom.test.ts
+          src/__tests__/utils/style.test.ts
+          src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts
+          src/__tests__/reader/utils/iframeEventHandlers.test.ts
+          --maxWorkers=2
+
+      - name: Run pan-lock browser regressions
+        working-directory: apps/readest-app
+        run: >-
+          pnpm exec dotenv -e .env -e .env.test.local -- vitest run
+          --config vitest.browser.config.mts
+          src/__tests__/document/fixed-layout-pan-lock.browser.test.ts
+          src/__tests__/document/pdf-pan-lock.browser.test.ts
