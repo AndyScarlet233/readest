@@ -538,6 +538,129 @@ describe('transformStylesheet', () => {
       localStorage.removeItem('themeMode');
     });
   });
+
+  // The paginator sizes the section iframe to the whole multi-column strip, so
+  // `(orientation: ...)` inside a section describes the strip, not a page — and
+  // the strip is derived from the content, so the query and the page count feed
+  // each other and the layout never settles (#6038).
+  describe('orientation media queries', () => {
+    const LANDSCAPE_CSS = '@media screen and (orientation: landscape) { div { column-count: 2; } }';
+    const PORTRAIT_CSS = '@media screen and (orientation:portrait) { div { column-count: 2; } }';
+
+    it('keeps a landscape block when the reader viewport is landscape', () => {
+      const result = transformStylesheet(LANDSCAPE_CSS, 1000, 800, VERTICAL);
+      expect(result).toContain('@media screen and (min-width: 0px)');
+      expect(result).not.toContain('orientation');
+    });
+
+    it('drops a landscape block when the reader viewport is portrait', () => {
+      const result = transformStylesheet(LANDSCAPE_CSS, 800, 1000, VERTICAL);
+      expect(result).toContain('@media screen and (min-width: 999999px)');
+      expect(result).not.toContain('orientation');
+    });
+
+    it('keeps a portrait block when the reader viewport is portrait', () => {
+      const result = transformStylesheet(PORTRAIT_CSS, 800, 1000, VERTICAL);
+      expect(result).toContain('@media screen and (min-width: 0px)');
+    });
+
+    it('drops a portrait block when the reader viewport is landscape', () => {
+      const result = transformStylesheet(PORTRAIT_CSS, 1000, 800, VERTICAL);
+      expect(result).toContain('@media screen and (min-width: 999999px)');
+    });
+
+    it('leaves the rest of the query and its declarations intact', () => {
+      const result = transformStylesheet(LANDSCAPE_CSS, VW, VH, VERTICAL);
+      expect(result).toContain('div { column-count: 2; }');
+      expect(result.startsWith('@media screen and ')).toBe(true);
+    });
+
+    it('leaves a media query with no viewport feature alone', () => {
+      const css = '@media print { div { padding: 1em; } }';
+      expect(transformStylesheet(css, VW, VH, VERTICAL)).toContain('@media print {');
+    });
+
+    it('leaves the literal alone in a declaration value', () => {
+      const css = '.q::after { content: "(orientation: landscape)"; }';
+      expect(transformStylesheet(css, VW, VH, VERTICAL)).toContain(
+        'content: "(orientation: landscape)"',
+      );
+    });
+
+    it('leaves the literal alone in an attribute selector', () => {
+      const css = '[data-q="(orientation: portrait)"] { padding: 1em; }';
+      expect(transformStylesheet(css, VW, VH, VERTICAL)).toContain(
+        '[data-q="(orientation: portrait)"]',
+      );
+    });
+  });
+
+  // Same circular dependency as the orientation feature: a two-page section
+  // makes the strip twice as wide, so a width query can flip on the page count
+  // it is itself deciding. The IDPF sample's `(max-width: 480px)` block does
+  // exactly that through `h1 { margin: 50% auto 0 0 }`.
+  describe('width and height media queries', () => {
+    const small = (feature: string) => `@media screen and (${feature}) { h1 { margin: 50%; } }`;
+
+    it('drops a max-width block when the reader viewport is wider', () => {
+      expect(transformStylesheet(small('max-width: 480px'), 1000, 800, VERTICAL)).toContain(
+        '(min-width: 999999px)',
+      );
+    });
+
+    it('keeps a max-width block when the reader viewport is narrower', () => {
+      expect(transformStylesheet(small('max-width:480px'), 390, 800, VERTICAL)).toContain(
+        '@media screen and (min-width: 0px)',
+      );
+    });
+
+    it('keeps a min-width block when the reader viewport is wide enough', () => {
+      expect(transformStylesheet(small('min-width: 600px'), 1000, 800, VERTICAL)).toContain(
+        '@media screen and (min-width: 0px)',
+      );
+    });
+
+    it('drops a min-width block when the reader viewport is too narrow', () => {
+      expect(transformStylesheet(small('min-width: 600px'), 390, 800, VERTICAL)).toContain(
+        '(min-width: 999999px)',
+      );
+    });
+
+    it('resolves height features against the reader viewport height', () => {
+      expect(transformStylesheet(small('max-height: 500px'), 1000, 800, VERTICAL)).toContain(
+        '(min-width: 999999px)',
+      );
+      expect(transformStylesheet(small('min-height: 500px'), 1000, 800, VERTICAL)).toContain(
+        '@media screen and (min-width: 0px)',
+      );
+    });
+
+    it('leaves a length it cannot resolve to px alone', () => {
+      expect(transformStylesheet(small('max-width: 30em'), 1000, 800, VERTICAL)).toContain(
+        '(max-width: 30em)',
+      );
+    });
+
+    it('leaves the same feature alone outside a media prelude', () => {
+      const css = '[data-q="(max-width: 480px)"] { padding: 1em; }';
+      expect(transformStylesheet(css, VW, VH, VERTICAL)).toContain('[data-q="(max-width: 480px)"]');
+    });
+
+    it('leaves a whole prelude alone when it sits inside a quoted value', () => {
+      const css = '.note::before { content: "@media (orientation: landscape)"; }';
+      expect(transformStylesheet(css, VW, VH, VERTICAL)).toContain(
+        'content: "@media (orientation: landscape)"',
+      );
+    });
+
+    it('does not let a quoted at-rule swallow the rules that follow it', () => {
+      const css =
+        '.note::before { content: "@media screen"; } @media (max-width: 480px) { p { margin: 0; } }';
+      const result = transformStylesheet(css, 390, 800, VERTICAL);
+      expect(result).toContain('content: "@media screen"');
+      expect(result).toContain('@media (min-width: 0px) {');
+    });
+  });
 });
 
 describe('getFootnoteStyles', () => {
