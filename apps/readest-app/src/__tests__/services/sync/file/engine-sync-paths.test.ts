@@ -56,6 +56,7 @@ const fakeStore = (opts: Partial<LocalStore> = {}): LocalStore => ({
   prepareLocalBookPath: opts.prepareLocalBookPath ?? (async () => '/local/dst'),
   loadBookCover: opts.loadBookCover ?? (async () => null),
   saveBookCover: opts.saveBookCover ?? (async () => {}),
+  updateBookCover: opts.updateBookCover ?? (async () => {}),
   addBookToLibrary: opts.addBookToLibrary ?? (async () => {}),
   updateBookMetadata: opts.updateBookMetadata ?? (async () => {}),
   deleteBookLocally: opts.deleteBookLocally ?? (async () => {}),
@@ -93,20 +94,22 @@ describe('FileSyncEngine.pushBookFile — streaming upload', () => {
     expect(uploadStream).not.toHaveBeenCalled();
   });
 
-  test('retries the stream once before failing', async () => {
-    const uploadStream = vi
-      .fn<(remotePath: string, localPath: string) => Promise<boolean>>()
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
-    const provider = fakeProvider({ head: async () => null, uploadStream });
+  test('falls back to buffered upload when streaming returns false', async () => {
+    const uploadStream = vi.fn(async () => false);
+    const writeBinary = vi.fn(async () => {});
+    const loadBookFile = vi.fn(async () => ({ bytes: new ArrayBuffer(100), size: 100 }));
+    const provider = fakeProvider({ head: async () => null, uploadStream, writeBinary });
     const store = fakeStore({
       resolveLocalBookPath: async () => ({ path: '/local/x.epub', size: 100 }),
+      loadBookFile,
     });
 
     const res = await new FileSyncEngine(provider, store).pushBookFile(makeBook('h1'));
 
     expect(res).toEqual({ uploaded: true });
-    expect(uploadStream).toHaveBeenCalledTimes(2);
+    expect(uploadStream).toHaveBeenCalledTimes(1);
+    expect(loadBookFile).toHaveBeenCalledTimes(1);
+    expect(writeBinary).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -313,6 +316,21 @@ describe('FileSyncEngine.downloadBookFile', () => {
     );
   });
 
+  test('falls back to buffered download when streaming returns false', async () => {
+    const downloadStream = vi.fn(async () => false);
+    const readBinary = vi.fn(async () => new ArrayBuffer(8));
+    const saveBookFile = vi.fn(async () => {});
+    const provider = fakeProvider({ list: hashDirListing(true), downloadStream, readBinary });
+    const store = fakeStore({ saveBookFile });
+
+    const ok = await new FileSyncEngine(provider, store).downloadBookFile(makeBook('h1'));
+
+    expect(ok).toBe(true);
+    expect(downloadStream).toHaveBeenCalledTimes(1);
+    expect(readBinary).toHaveBeenCalledWith('/Readest/books/h1/B.epub');
+    expect(saveBookFile).toHaveBeenCalledTimes(1);
+  });
+
   test('forwards an onProgress handler to the streaming downloader', async () => {
     const onProgress = vi.fn();
     const downloadStream = vi.fn(async () => true);
@@ -331,6 +349,79 @@ describe('FileSyncEngine.downloadBookFile', () => {
       '/local/h1/B.epub',
       onProgress,
     );
+  });
+});
+
+describe('FileSyncEngine.syncLibrary — cover healing and presence cursor', () => {
+  test('repairs a missing local cover when the remote presence cursor is set', async () => {
+    const saveBookCover = vi.fn(async () => {});
+    const updateBookCover = vi.fn(async () => {});
+    const readBinary = vi.fn(async () => new ArrayBuffer(8));
+    const provider = fakeProvider({
+      readText: async (path: string) =>
+        path.endsWith('library.json')
+          ? JSON.stringify({
+              ...makeIndex([makeBook('h1', { coverHash: 'remote-cover', coverUpdatedAt: 20 })]),
+              coveredHashes: ['h1'],
+            })
+          : null,
+      readBinary,
+    });
+    const local = makeBook('h1', { coverHash: undefined, coverDownloadedAt: undefined });
+    const store = fakeStore({ saveBookCover, updateBookCover });
+
+    await new FileSyncEngine(provider, store).syncLibrary([local], {
+      strategy: 'silent',
+      syncBooks: false,
+      deviceId: 'd',
+    });
+
+    expect(readBinary).toHaveBeenCalledWith('/Readest/books/h1/cover.png');
+    expect(saveBookCover).toHaveBeenCalledWith(
+      expect.objectContaining({ hash: 'h1' }),
+      expect.anything(),
+    );
+    expect(updateBookCover).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hash: 'h1',
+        coverHash: 'remote-cover',
+        coverDownloadedAt: expect.any(Number),
+      }),
+    );
+  });
+
+  test('persists coveredHashes after a successful cover upload', async () => {
+    const captured: Captured = { writes: [] };
+    const writeBinary = vi.fn(async () => {});
+    const provider = fakeProvider({
+      readText: async (path: string) =>
+        path.endsWith('library.json') ? JSON.stringify(makeIndex([makeBook('h1')])) : null,
+      head: async () => null,
+      writeBinary,
+      captured,
+    });
+    const store = fakeStore({
+      loadBookCover: async () => ({ bytes: new ArrayBuffer(8), size: 8 }),
+    });
+
+    await new FileSyncEngine(provider, store).syncLibrary(
+      [makeBook('h1', { coverHash: 'local-cover', coverUpdatedAt: 2 })],
+      {
+        strategy: 'silent',
+        syncBooks: false,
+        deviceId: 'd',
+      },
+    );
+
+    expect(writeBinary).toHaveBeenCalledWith(
+      '/Readest/books/h1/cover.png',
+      expect.anything(),
+      'image/png',
+    );
+    const index = JSON.parse(
+      captured.writes.find((write) => write.path.endsWith('library.json'))!.body,
+    ) as RemoteLibraryIndex;
+    expect(index.coveredHashes).toEqual(['h1']);
   });
 });
 
@@ -356,6 +447,7 @@ const makeIndex = (books: Book[], uploadedHashes?: string[]): RemoteLibraryIndex
   schemaVersion: 1,
   updatedAt: 1,
   books,
+  coveredHashes: [],
   ...(uploadedHashes ? { uploadedHashes } : {}),
 });
 
@@ -852,13 +944,36 @@ describe('FileSyncEngine.syncLibrary — empty-dir record', () => {
     return entries;
   };
 
-  test('records an inspected file-less dir in the index', async () => {
+  test('adds a metadata-only row for an index-known file-less dir', async () => {
+    // The index knows h9 but its bytes are still in flight on the peer: the
+    // shelf row (cover + config) materialises now instead of waiting for the
+    // file, and the dir is deliberately NOT recorded as empty — the next run
+    // re-lists once uploadedHashes catches up.
     const captured: Captured = { writes: [] };
     const provider = fakeProvider({
       readText: async (p) =>
         p.endsWith('library.json')
           ? JSON.stringify(makeIndex([makeBook('h9', { updatedAt: 100 })]))
           : null,
+      list: orphanListing(false),
+      captured,
+    });
+    const res = await new FileSyncEngine(provider, fakeStore()).syncLibrary([], opts);
+
+    expect(res.booksAdded).toBe(1);
+    const idx = JSON.parse(
+      captured.writes.find((w) => w.path.endsWith('library.json'))!.body,
+    ) as RemoteLibraryIndex;
+    expect(idx.emptyDirs ?? []).not.toContain('h9');
+    expect(idx.uploadedHashes ?? []).not.toContain('h9');
+  });
+
+  test('records a file-less dir with no index entry as empty', async () => {
+    // A dir-discovered candidate (legacy upload, no library.json entry) with
+    // no book file: nothing to show, record it so later runs skip re-listing.
+    const captured: Captured = { writes: [] };
+    const provider = fakeProvider({
+      readText: async (p) => (p.endsWith('library.json') ? JSON.stringify(makeIndex([])) : null),
       list: orphanListing(false),
       captured,
     });
