@@ -54,7 +54,12 @@ jobs:
             if (has('packages/') && !has('packages/foliate-js/')) categories.push('共享包');
             if (exact('.github/workflows/msvc-test.yml')) categories.push('Windows/MSVC 快速测试工作流');
             if (exact('.github/workflows/release.yml')) categories.push('Release 完整打包工作流');
-            else if (has('.github/workflows/') && !exact('.github/workflows/msvc-test.yml')) categories.push('GitHub Actions');
+            const hasOtherWorkflow = names.some((name) =>
+              name.startsWith('.github/workflows/') &&
+              name !== '.github/workflows/msvc-test.yml' &&
+              name !== '.github/workflows/release.yml'
+            );
+            if (hasOtherWorkflow) categories.push('GitHub Actions');
             if (matches(/(^|\/)package\.json$/) || exact('pnpm-lock.yaml') || exact('pnpm-workspace.yaml')) categories.push('JavaScript 依赖/工作区');
             if (exact('Cargo.toml') || exact('Cargo.lock') || matches(/(^|\/)Cargo\.toml$/)) categories.push('Rust 依赖/工作区');
             if (has('data/icons/')) categories.push('应用图标/资源');
