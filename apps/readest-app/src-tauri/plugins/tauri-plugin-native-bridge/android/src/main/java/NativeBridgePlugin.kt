@@ -84,7 +84,6 @@ class RenderPdfCoverArgs {
 @InvokeArg
 class MulticastLockArgs {
     var acquire: Boolean = false
-    var owner: String? = null
 }
 
 @InvokeArg
@@ -229,9 +228,10 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
     // a dead Activity.
     private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // Shared by LocalSend, persistent LAN sync, and temporary LAN discovery.
-    // Keep counts in native state so separate WebViews/windows cannot release
-    // an owner's lock while another window still holds it.
+    // Held while the LocalSend service runs so multicast discovery
+    // announcements are delivered; most Android devices filter multicast
+    // packets without it. Released in onDestroy.
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
     // The in-app browser presented by `open_web_browser` (#5775); null when closed.
     private var activeWebBrowser: WebBrowserController? = null
@@ -290,20 +290,15 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
         stopAmbientLightUpdatesInternal()
         inputManager?.unregisterInputDeviceListener(gamepadInputListener)
         inputManager = null
-        synchronized(multicastLockOwnersLock) {
-            if (activePluginInstances.remove(this) && activePluginInstances.isEmpty()) {
-                multicastLockOwnerCounts.clear()
-                try {
-                    multicastLock?.takeIf { it.isHeld }?.release()
-                } catch (_: Exception) {
-                    // Releasing an unheld lock throws on some OEM builds; ignore.
-                }
-                if (multicastLock?.isHeld != true) multicastLock = null
-            }
+        try {
+            multicastLock?.takeIf { it.isHeld }?.release()
+        } catch (_: Exception) {
+            // Releasing an unheld lock throws on some OEM builds; ignore.
         }
+        multicastLock = null
         pluginScope.cancel()
         activity.application.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
-        if (instance === this) instance = null
+        instance = null
     }
 
     companion object {
@@ -320,11 +315,6 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
         // plugin, so the raw Intent is stashed here and drained in load().
         private var pendingFilePickerData: Intent? = null
         private var instance: NativeBridgePlugin? = null
-        private val activePluginInstances = mutableSetOf<NativeBridgePlugin>()
-        private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
-        private val multicastLockOwnerCounts: MutableMap<String, Int> = mutableMapOf()
-        private val multicastLockOwnersLock = Any()
-        private val supportedMulticastLockOwners = setOf("localsend", "lan-sync", "lan-discovery")
         fun getInstance(): NativeBridgePlugin? = instance
 
         fun deliverActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -339,10 +329,7 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
     }
 
     override fun load(webView: WebView) {
-        synchronized(multicastLockOwnersLock) {
-            activePluginInstances.add(this)
-            instance = this
-        }
+        instance = this
         webViewRef = webView
         super.load(webView)
         inputManager = activity.getSystemService(Context.INPUT_SERVICE) as? InputManager
@@ -561,62 +548,22 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
 
     @Command
     fun set_multicast_lock(invoke: Invoke) {
-        val args: MulticastLockArgs
+        val args = invoke.parseArgs(MulticastLockArgs::class.java)
         try {
-            args = invoke.parseArgs(MulticastLockArgs::class.java)
-        } catch (e: Exception) {
-            invoke.reject(e.message ?: "invalid multicast lock arguments")
-            return
-        }
-        val owner = args.owner?.trim()
-        var acquiredByCall = false
-        if (owner.isNullOrEmpty() || owner !in supportedMulticastLockOwners) {
-            invoke.reject("multicast lock owner is invalid")
-            return
-        }
-        try {
-            synchronized(multicastLockOwnersLock) {
-                val previousOwnerCount = multicastLockOwnerCounts[owner] ?: 0
-                val previousTotal = multicastLockOwnerCounts.values.sum()
-                if (args.acquire) {
-                    if (previousTotal == 0) {
-                        if (multicastLock == null) {
-                            val wifi = activity.applicationContext
-                                .getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
-                            multicastLock = wifi.createMulticastLock("readest-multicast").apply {
-                                setReferenceCounted(false)
-                            }
-                        }
-                        if (multicastLock?.isHeld != true) {
-                            acquiredByCall = true
-                            multicastLock?.acquire()
-
-                        }
-                    }
-                    multicastLockOwnerCounts[owner] = previousOwnerCount + 1
-                } else if (previousOwnerCount > 0) {
-                    if (previousTotal == 1) {
-                        multicastLock?.takeIf { it.isHeld }?.release()
-                    }
-                    if (previousOwnerCount == 1) {
-                        multicastLockOwnerCounts.remove(owner)
-                    } else {
-                        multicastLockOwnerCounts[owner] = previousOwnerCount - 1
+            if (args.acquire) {
+                if (multicastLock == null) {
+                    val wifi = activity.applicationContext
+                        .getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                    multicastLock = wifi.createMulticastLock("readest-localsend").apply {
+                        setReferenceCounted(false)
                     }
                 }
+                multicastLock?.acquire()
+            } else {
+                multicastLock?.release()
             }
             invoke.resolve()
         } catch (e: Exception) {
-            if (acquiredByCall) {
-                synchronized(multicastLockOwnersLock) {
-                    try {
-                        multicastLock?.takeIf { it.isHeld }?.release()
-                    } catch (_: Exception) {
-                        // Best effort rollback of a partially completed acquire.
-                    }
-                    if (multicastLock?.isHeld != true) multicastLock = null
-                }
-            }
             invoke.reject(e.message ?: "multicast lock failed")
         }
     }
