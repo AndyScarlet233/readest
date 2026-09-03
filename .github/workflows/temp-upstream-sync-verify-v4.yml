@@ -59,13 +59,13 @@ jobs:
           test "$(git log -1 --format=%s)" = "chore: sync upstream main through 2026-09-03"
           test "$(git rev-parse HEAD^2)" = "$UPSTREAM_REF"
 
-          # The previous run proved the only pre-push formatter delta was the
-          # missing final newline in this upstream-changed reader hook.
           pnpm exec biome format --write apps/readest-app/src/app/reader/hooks/usePagination.ts
           git add -A
 
-          # These are intentionally excluded by normal vitest and must use the
-          # real-Chromium browser config.
+          # Normal vitest excludes *.browser.test. Install the exact Chromium
+          # build required by the lockfile's Playwright version, then run only
+          # the two new fixed-layout/PDF pan-lock regressions in real Chromium.
+          pnpm --filter @readest/readest-app exec playwright install chromium
           pnpm --filter @readest/readest-app test:browser \
             src/__tests__/document/fixed-layout-pan-lock.browser.test.ts \
             src/__tests__/document/pdf-pan-lock.browser.test.ts
