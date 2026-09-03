@@ -40,7 +40,12 @@ jobs:
           new = """        const horizontalDominant = Math.abs(totalX) >= Math.abs(totalY);\n        const verticalDominant = Math.abs(totalY) > Math.abs(totalX);\n        if (horizontalPan && verticalPan) {\n          // When the zoomed fixed-layout page overflows in both directions, keep\n          // both deltas. Dominant-axis detection is only gesture arbitration; it\n          // must not become a permanent axis lock for free panning.\n          state.horizontal = true;\n          state.vertical = true;\n          state.mode = 'pan';\n        } else if (horizontalPan && horizontalDominant) {\n          state.horizontal = true;\n          state.vertical = false;\n          state.mode = 'pan';\n        } else if (verticalPan && verticalDominant) {\n          state.horizontal = false;\n          state.vertical = true;\n          state.mode = 'pan';\n        } else if (canPageDrag && horizontalDominant && Math.abs(totalX) >= 10) {\n"""
           if text.count(old) != 1:
               raise SystemExit(f'usePagination replacement count: {text.count(old)}')
-          pagination.write_text(text.replace(old, new))
+          text = text.replace(old, new)
+          old_pan = "view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);"
+          new_pan = "view?.pan(state.horizontal && dx !== 0 ? -dx : 0, state.vertical && dy !== 0 ? -dy : 0);"
+          if text.count(old_pan) != 1:
+              raise SystemExit(f'usePagination pan normalization replacement count: {text.count(old_pan)}')
+          pagination.write_text(text.replace(old_pan, new_pan))
 
           handlers = Path('apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts')
           text = handlers.read_text()
