@@ -85,4 +85,4 @@ jobs:
             apps/readest-app/src/__tests__/reader/utils/iframeEventHandlers.test.ts
           git diff --cached --check
           HUSKY=0 git commit -m "fix(reader): allow diagonal fixed-layout mouse panning"
-          git push origin HEAD:fix/diagonal-pan-msvc-review-2026-09-03
+          HUSKY=0 git push origin HEAD:fix/diagonal-pan-msvc-review-2026-09-03
