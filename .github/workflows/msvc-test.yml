@@ -98,8 +98,8 @@ jobs:
       - name: TypeScript typecheck
         run: pnpm --filter @readest/readest-app exec tsc --noEmit
 
-      - name: ImageViewer regression tests
-        run: pnpm --filter @readest/readest-app exec vitest run src/__tests__/components/ImageViewer.test.tsx --maxWorkers=2
+      - name: Reader interaction regression tests
+        run: pnpm --filter @readest/readest-app exec vitest run src/__tests__/components/ImageViewer.test.tsx src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts src/__tests__/reader/utils/iframeEventHandlers.test.ts --maxWorkers=2
 
       - name: Rust MSVC compile check
         run: cargo check -p Readest --target x86_64-pc-windows-msvc
