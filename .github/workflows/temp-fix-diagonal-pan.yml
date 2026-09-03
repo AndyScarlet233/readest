@@ -1,0 +1,87 @@
+name: Temp Fix Diagonal Pan
+
+on:
+  push:
+    branches:
+      - fix-fixed-layout-diagonal-pan-2026-09-03
+    paths:
+      - .github/workflows/temp-fix-diagonal-pan.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Apply diagonal-pan fix and regression tests
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          pagination = Path('apps/readest-app/src/app/reader/hooks/usePagination.ts')
+          text = pagination.read_text()
+          old = """        const horizontalDominant = Math.abs(totalX) >= Math.abs(totalY);\n        const verticalDominant = Math.abs(totalY) > Math.abs(totalX);\n        if (horizontalPan && horizontalDominant) {\n          state.horizontal = true;\n          state.vertical = false;\n          state.mode = 'pan';\n        } else if (verticalPan && verticalDominant) {\n          state.horizontal = false;\n          state.vertical = true;\n          state.mode = 'pan';\n        } else if (canPageDrag && horizontalDominant && Math.abs(totalX) >= 10) {\n"""
+          new = """        const horizontalDominant = Math.abs(totalX) >= Math.abs(totalY);\n        const verticalDominant = Math.abs(totalY) > Math.abs(totalX);\n        if (horizontalPan && verticalPan) {\n          // When the zoomed fixed-layout page overflows in both directions, keep\n          // both deltas. Dominant-axis detection is only gesture arbitration; it\n          // must not become a permanent axis lock for free panning.\n          state.horizontal = true;\n          state.vertical = true;\n          state.mode = 'pan';\n        } else if (horizontalPan && horizontalDominant) {\n          state.horizontal = true;\n          state.vertical = false;\n          state.mode = 'pan';\n        } else if (verticalPan && verticalDominant) {\n          state.horizontal = false;\n          state.vertical = true;\n          state.mode = 'pan';\n        } else if (canPageDrag && horizontalDominant && Math.abs(totalX) >= 10) {\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'usePagination replacement count: {text.count(old)}')
+          pagination.write_text(text.replace(old, new))
+
+          handlers = Path('apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts')
+          text = handlers.read_text()
+          old = """  const horizontal = axes.horizontal && Math.abs(deltaX) >= Math.abs(deltaY);\n  const vertical = axes.vertical && Math.abs(deltaY) > Math.abs(deltaX);\n"""
+          new = """  const bothAxes = axes.horizontal && axes.vertical;\n  const horizontal = axes.horizontal && (bothAxes || Math.abs(deltaX) >= Math.abs(deltaY));\n  const vertical = axes.vertical && (bothAxes || Math.abs(deltaY) > Math.abs(deltaX));\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'iframe handler replacement count: {text.count(old)}')
+          handlers.write_text(text.replace(old, new))
+
+          pagination_test = Path('apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts')
+          text = pagination_test.read_text()
+          old = """  test('claims after threshold and pans incrementally with opposite screen delta', () => {\n    const view = makeView();\n"""
+          new = """  test('claims after threshold and pans incrementally with opposite screen delta', () => {\n    const view = makeView(true, false);\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'pagination test axis setup replacement count: {text.count(old)}')
+          text = text.replace(old, new)
+          marker = """  test('keeps a fixed-layout drag alive until overflow becomes available', () => {\n"""
+          addition = """  test('preserves both deltas when a fixed-layout page overflows on both axes', () => {\n    const view = makeView(true, true);\n    const h = renderHook(() =>\n      usePagination('book-1', { current: view as unknown as FoliateView }, { current: null }),\n    );\n\n    expect(h.result.current.handleMousePan(point(100, 100))).toBe(false);\n    expect(\n      h.result.current.handleMousePan({\n        type: 'mousemove',\n        bookKey: 'book-1',\n        buttons: 1,\n        screenX: 124,\n        screenY: 118,\n      }),\n    ).toBe(true);\n    expect(view.pan).toHaveBeenCalledWith(-24, -18);\n  });\n\n"""
+          if text.count(marker) != 1:
+              raise SystemExit(f'pagination test insertion marker count: {text.count(marker)}')
+          pagination_test.write_text(text.replace(marker, addition + marker))
+
+          handler_test = Path('apps/readest-app/src/__tests__/reader/utils/iframeEventHandlers.test.ts')
+          text = handler_test.read_text()
+          marker = """  test('raw fixed-layout mouse pan claims the first move and suppresses its click', async () => {\n"""
+          addition = """  test('raw fixed-layout mouse pan preserves diagonal movement with dual overflow', async () => {\n    const { handleMousedown, handleMousemove } = await importHandlers();\n    const { host, frameDocument } = fixedLayoutFrame({\n      isOverflowX: true,\n      isOverflowY: true,\n    });\n    const pan = vi.fn();\n    (host as typeof host & { pan: (dx: number, dy: number) => void }).pan = pan;\n\n    const start = mouseEvent({ buttons: 1, screenX: 100, screenY: 100 });\n    Object.defineProperty(start, 'currentTarget', { configurable: true, value: frameDocument });\n    handleMousedown('book-1', start);\n\n    const move = mouseEvent({ buttons: 1, screenX: 112, screenY: 109 });\n    Object.defineProperty(move, 'currentTarget', { configurable: true, value: frameDocument });\n    handleMousemove('book-1', move);\n\n    expect(pan).toHaveBeenCalledWith(-12, -9);\n    expect(move.preventDefault).toHaveBeenCalledOnce();\n  });\n\n"""
+          if text.count(marker) != 1:
+              raise SystemExit(f'iframe test insertion marker count: {text.count(marker)}')
+          handler_test.write_text(text.replace(marker, addition + marker))
+          PY
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Format changed files
+        run: pnpm exec biome format --write apps/readest-app/src/app/reader/hooks/usePagination.ts apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts apps/readest-app/src/__tests__/reader/utils/iframeEventHandlers.test.ts
+      - name: Run focused regression tests
+        run: pnpm --filter @readest/readest-app exec vitest run src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts src/__tests__/reader/utils/iframeEventHandlers.test.ts
+      - name: Type check
+        run: pnpm --filter @readest/readest-app exec tsc --noEmit
+      - name: Commit verified fix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/readest-app/src/app/reader/hooks/usePagination.ts \
+            apps/readest-app/src/app/reader/utils/iframeEventHandlers.ts \
+            apps/readest-app/src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts \
+            apps/readest-app/src/__tests__/reader/utils/iframeEventHandlers.test.ts
+          git diff --cached --check
+          git commit -m "fix(reader): allow diagonal fixed-layout mouse panning"
+          git push origin HEAD:fix-fixed-layout-diagonal-pan-2026-09-03
