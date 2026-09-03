@@ -1,0 +1,49 @@
+name: 临时上游同步合并验证 v4
+
+on:
+  push:
+    branches:
+      - sync-upstream-2026-09-02
+
+permissions:
+  contents: write
+
+jobs:
+  merge-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Fetch upstream and reviewed branch
+        id: refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch upstream 46eca1f3fdaa3c23bf1f683019c0ad5cfbc9ce7f
+          git fetch origin sync-upstream-2026-09-02
+          resolution_ref="$(git rev-parse origin/sync-upstream-2026-09-02)"
+          echo "resolution_ref=$resolution_ref" >> "$GITHUB_OUTPUT"
+          git show "$resolution_ref":.github/scripts/temp-upstream-sync-v4.sh > /tmp/upstream-sync-v4.sh
+
+      - name: Merge, adapt, test and publish working branch
+        shell: bash
+        run: bash /tmp/upstream-sync-v4.sh "${{ steps.refs.outputs.resolution_ref }}"
