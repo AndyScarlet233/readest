@@ -234,8 +234,9 @@ const tryClaimMousePan = (
   const deltaX = screenX - gesture.startX;
   const deltaY = screenY - gesture.startY;
   if (Math.hypot(deltaX, deltaY) < TOUCH_PAN_THRESHOLD_PX) return false;
-  const horizontal = axes.horizontal && Math.abs(deltaX) >= Math.abs(deltaY);
-  const vertical = axes.vertical && Math.abs(deltaY) > Math.abs(deltaX);
+  const bothAxes = axes.horizontal && axes.vertical;
+  const horizontal = axes.horizontal && (bothAxes || Math.abs(deltaX) >= Math.abs(deltaY));
+  const vertical = axes.vertical && (bothAxes || Math.abs(deltaY) > Math.abs(deltaX));
   if (!horizontal && !vertical) return false;
   gesture.horizontal = horizontal;
   gesture.vertical = vertical;

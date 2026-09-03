@@ -404,7 +404,14 @@ export const usePagination = (
         if (distance < 6) return false;
         const horizontalDominant = Math.abs(totalX) >= Math.abs(totalY);
         const verticalDominant = Math.abs(totalY) > Math.abs(totalX);
-        if (horizontalPan && horizontalDominant) {
+        if (horizontalPan && verticalPan) {
+          // When the zoomed fixed-layout page overflows in both directions, keep
+          // both deltas. Dominant-axis detection is only gesture arbitration; it
+          // must not become a permanent axis lock for free panning.
+          state.horizontal = true;
+          state.vertical = true;
+          state.mode = 'pan';
+        } else if (horizontalPan && horizontalDominant) {
           state.horizontal = true;
           state.vertical = false;
           state.mode = 'pan';
@@ -434,7 +441,7 @@ export const usePagination = (
       // Raw iframe moves pan the foliate-fxl host synchronously. Parent-window
       // moves (pointer left the iframe) still use view.pan as the continuation.
       if (!event.rawPanHandled) {
-        view?.pan(state.horizontal ? -dx : 0, state.vertical ? -dy : 0);
+        view?.pan(state.horizontal && dx !== 0 ? -dx : 0, state.vertical && dy !== 0 ? -dy : 0);
       }
       event.preventDefault?.();
       return true;
