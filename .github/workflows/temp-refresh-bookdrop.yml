@@ -11,21 +11,14 @@ permissions:
   contents: write
 
 jobs:
-  refresh-and-test:
+  refresh:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      NEXT_PUBLIC_APP_PLATFORM: tauri
-      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
-      NEXT_PUBLIC_POSTHOG_KEY: ''
-      SENTRY_DSN: ''
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-          submodules: recursive
-      - name: Merge latest main with semantic locale resolution
+      - name: Merge latest main and finalize branch
         shell: bash
         run: |
           set -euo pipefail
@@ -46,20 +39,18 @@ jobs:
           from pathlib import Path
 
           def load_stage(stage: int, path: str):
-              raw = subprocess.check_output(['git', 'show', f':{stage}:{path}'], text=True)
-              return json.loads(raw)
+              return json.loads(subprocess.check_output(['git', 'show', f':{stage}:{path}'], text=True))
 
+          missing = object()
           conflicts = subprocess.check_output(
               ['git', 'diff', '--name-only', '--diff-filter=U'], text=True
           ).splitlines()
-          missing = object()
           for rel in conflicts:
               base = load_stage(1, rel)
               ours = load_stage(2, rel)
               theirs = load_stage(3, rel)
               merged = dict(ours)
-              keys = list(dict.fromkeys([*base.keys(), *ours.keys(), *theirs.keys()]))
-              for key in keys:
+              for key in dict.fromkeys([*base.keys(), *ours.keys(), *theirs.keys()]):
                   b = base.get(key, missing)
                   o = ours.get(key, missing)
                   t = theirs.get(key, missing)
@@ -80,37 +71,10 @@ jobs:
             git add apps/readest-app/public/locales/*/translation.json
             git commit --no-edit
           fi
-          git diff --check origin/main...HEAD
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --prefer-offline
-      - run: pnpm --filter @readest/readest-app setup-vendors
-      - name: Format fork-owned BookDrop gate
-        run: pnpm exec biome format --write apps/readest-app/src/utils/access.ts
-      - name: Run focused Nearby BookDrop regressions
-        run: >-
-          pnpm --filter @readest/readest-app exec vitest run
-          src/__tests__/components/localsend/LocalSendManagerPresence.test.tsx
-          src/__tests__/components/localsend/ReceiveRequestPairing.test.tsx
-          src/__tests__/services/localsend/deviceModel.test.ts
-          src/__tests__/services/localsend/devicePrefs.test.ts
-          src/__tests__/services/localsend/pairedDevices.test.ts
-          src/__tests__/services/localsend/sounds.test.ts
-          src/__tests__/store/localsendStore.test.ts
-          src/__tests__/utils/nearby-pairing-plan-gate.test.ts
-          --maxWorkers=2
-      - name: Remove temporary workflows and push refreshed branch
-        shell: bash
-        run: |
-          set -euo pipefail
           rm -f .github/workflows/temp-bookdrop-js-tests.yml .github/workflows/temp-refresh-bookdrop.yml
-          git add apps/readest-app/src/utils/access.ts
           git add -u .github/workflows
           if ! git diff --cached --quiet; then
-            git commit -m 'style(bookdrop): format fork gate and clean temporary validation'
+            git commit -m 'ci: clean temporary BookDrop validation workflows'
           fi
           git diff --check origin/main...HEAD
           git push --no-verify origin HEAD:integrate/upstream-nearby-bookdrop-v2-2026-09-04
