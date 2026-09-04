@@ -121,12 +121,26 @@ export async function createOrUpdatePayment(userId: string, purchase: VerifiedPu
 
     if (!updated || updated.length === 0) {
       const { error: insertError } = await supabase.from('payments').insert(paymentData);
-      // 23505 is a unique violation: the transaction exists under another user,
-      // since an existing row of our own would have been updated above.
       if (insertError?.code === '23505') {
-        throw new Error(IAPError.TRANSACTION_BELONGS_TO_ANOTHER_USER);
-      }
-      if (insertError) {
+        // A unique violation can also be the benign loser of a same-user race:
+        // client verification and the App Store webhook may both try the first
+        // insert concurrently. Once the unique constraint has arbitrated, read
+        // the winning row and distinguish idempotence from a real ownership
+        // conflict instead of reporting every 23505 as cross-account theft.
+        const { data: existingPayment, error: ownerError } = await supabase
+          .from('payments')
+          .select('user_id')
+          .eq('apple_original_transaction_id', purchase.originalTransactionId)
+          .single();
+
+        if (ownerError || !existingPayment) {
+          console.error('Failed to verify payment owner after unique conflict:', ownerError);
+          throw new Error(`Database payment update failed: ${insertError.message}`);
+        }
+        if (existingPayment.user_id !== userId) {
+          throw new Error(IAPError.TRANSACTION_BELONGS_TO_ANOTHER_USER);
+        }
+      } else if (insertError) {
         console.error('Database payment insert error:', insertError);
         throw new Error(`Database payment update failed: ${insertError.message}`);
       }
