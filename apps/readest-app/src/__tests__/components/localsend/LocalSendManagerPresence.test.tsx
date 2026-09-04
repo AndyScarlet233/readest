@@ -29,7 +29,10 @@ vi.mock('@/services/localsend/devicePrefs', () => ({
   getLocalSendAlias: () => 'Test Device',
   isLocalSendEnabled: () => true,
 }));
-vi.mock('@/utils/bridge', () => ({ setMulticastLock: vi.fn(async () => {}) }));
+vi.mock('@/utils/bridge', () => ({
+  setMulticastLock: vi.fn(async () => {}),
+  setPersistentMulticastLock: vi.fn(async () => {}),
+}));
 vi.mock('@/services/localsend/sounds', () => ({
   playTransferCue: vi.fn(),
   primeTransferCues: vi.fn(),
