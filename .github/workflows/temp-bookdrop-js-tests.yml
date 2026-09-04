@@ -1,0 +1,45 @@
+name: Temporary BookDrop focused regressions
+
+on:
+  push:
+    branches:
+      - integrate/upstream-nearby-bookdrop-v2-2026-09-04
+    paths:
+      - .github/workflows/temp-bookdrop-js-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_APP_PLATFORM: tauri
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_POSTHOG_KEY: ''
+      SENTRY_DSN: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --prefer-offline
+      - run: pnpm --filter @readest/readest-app setup-vendors
+      - name: Run focused Nearby BookDrop regressions
+        run: >-
+          pnpm --filter @readest/readest-app exec vitest run
+          src/__tests__/components/localsend/LocalSendManagerPresence.test.tsx
+          src/__tests__/components/localsend/ReceiveRequestPairing.test.tsx
+          src/__tests__/services/localsend/deviceModel.test.ts
+          src/__tests__/services/localsend/devicePrefs.test.ts
+          src/__tests__/services/localsend/pairedDevices.test.ts
+          src/__tests__/services/localsend/sounds.test.ts
+          src/__tests__/store/localsendStore.test.ts
+          src/__tests__/utils/nearby-pairing-plan-gate.test.ts
+          --maxWorkers=2
