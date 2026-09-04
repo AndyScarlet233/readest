@@ -2245,5 +2245,8 @@
   "This is not a ReadEra backup file.": "これは ReadEra のバックアップファイルではありません。",
   "This book was not found in the ReadEra backup.": "この本は ReadEra のバックアップに見つかりませんでした。",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra のバックアップファイル (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra のバックアップファイル (.bak)",
+  "Speech": "読み上げ",
+  "Skip Parenthetical Readings": "括弧内の読みをスキップ",
+  "Do not speak kana or Han readings shown after Han text": "漢字の後に表示される仮名または漢字の読みを読み上げない"
 }

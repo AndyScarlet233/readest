@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "මෙය ReadEra උපස්ථ ගොනුවක් නොවේ.",
   "This book was not found in the ReadEra backup.": "මෙම පොත ReadEra උපස්ථයේ හමු නොවීය.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra උපස්ථ ගොනුව (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra උපස්ථ ගොනුව (.bak)",
+  "Speech": "කථනය",
+  "Skip Parenthetical Readings": "වරහන් තුළ ඇති කියවීම් මඟ හරින්න",
+  "Do not speak kana or Han readings shown after Han text": "හන් පෙළට පසුව පෙන්වන කනා හෝ හන් කියවීම් උච්චාරණය නොකරන්න"
 }

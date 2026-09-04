@@ -2365,5 +2365,8 @@
   "This is not a ReadEra backup file.": "זהו אינו קובץ גיבוי של ReadEra.",
   "This book was not found in the ReadEra backup.": "הספר הזה לא נמצא בגיבוי של ReadEra.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "קובץ גיבוי של ReadEra ‏(.bak)"
+  "ReadEra backup file (.bak)": "קובץ גיבוי של ReadEra ‏(.bak)",
+  "Speech": "דיבור",
+  "Skip Parenthetical Readings": "דלג על קריאות בסוגריים",
+  "Do not speak kana or Han readings shown after Han text": "אל תקריא קריאות בקאנה או בהאן המוצגות אחרי טקסט בהאן"
 }

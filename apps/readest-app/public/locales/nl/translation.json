@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "Dit is geen ReadEra-back-upbestand.",
   "This book was not found in the ReadEra backup.": "Dit boek is niet gevonden in de ReadEra-back-up.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra-back-upbestand (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra-back-upbestand (.bak)",
+  "Speech": "Spraak",
+  "Skip Parenthetical Readings": "Lezingen tussen haakjes overslaan",
+  "Do not speak kana or Han readings shown after Han text": "Kana- of Han-lezingen na Han-tekst niet uitspreken"
 }
