@@ -109,21 +109,15 @@ export const TTS_CACHE_REQUIRES_PREMIUM = true;
 export const isTTSCacheAllowed = (plan: UserPlan): boolean =>
   FORK_UNLOCK || !TTS_CACHE_REQUIRES_PREMIUM || isTTSCacheInPlan(plan);
 
-
 /** Nearby BookDrop pairing stays client-side and is unlocked in this fork. */
 export const NEARBY_PAIRING_PLANS: readonly UserPlan[] = ['plus', 'pro', 'purchase'];
 
-export const isNearbyPairingInPlan = (
-  plan: UserPlan,
-  customizationPurchased = false,
-): boolean => customizationPurchased || plan === 'plus' || plan === 'pro';
+export const isNearbyPairingInPlan = (plan: UserPlan, customizationPurchased = false): boolean =>
+  customizationPurchased || plan === 'plus' || plan === 'pro';
 
 export const NEARBY_PAIRING_REQUIRES_PREMIUM = true;
 
-export const isNearbyPairingAllowed = (
-  plan: UserPlan,
-  customizationPurchased = false,
-): boolean =>
+export const isNearbyPairingAllowed = (plan: UserPlan, customizationPurchased = false): boolean =>
   FORK_UNLOCK ||
   !NEARBY_PAIRING_REQUIRES_PREMIUM ||
   isNearbyPairingInPlan(plan, customizationPurchased);
