@@ -1,0 +1,49 @@
+name: Temporary upstream BookDrop conflict audit
+
+on:
+  push:
+    branches:
+      - audit/upstream-bookdrop-6049-2026-09-04
+    paths:
+      - .github/workflows/temp-upstream-bookdrop-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  conflict-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Inspect upstream BookDrop cherry-pick
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch --no-tags upstream 9c235ed8f9dfd56a063b18a190cf77ece908ce9c
+          if git cherry-pick --no-commit 9c235ed8f9dfd56a063b18a190cf77ece908ce9c; then
+            echo 'BOOKDROP_CHERRY_PICK_CLEAN=true'
+            git diff --stat
+            exit 0
+          fi
+          echo 'BOOKDROP_CHERRY_PICK_CLEAN=false'
+          echo '::group::Unmerged files'
+          git diff --name-only --diff-filter=U
+          echo '::endgroup::'
+          echo '::group::Conflict summary'
+          git status --short
+          echo '::endgroup::'
+          for file in $(git diff --name-only --diff-filter=U); do
+            echo "::group::Conflict $file"
+            git diff --cc -- "$file" | sed -n '1,260p'
+            echo '::endgroup::'
+          done
+          exit 1
