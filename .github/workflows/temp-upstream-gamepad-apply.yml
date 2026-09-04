@@ -41,13 +41,36 @@ jobs:
               git checkout --ours -- "$file"
               git add "$file"
             done
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          additions = {
+              'zh-CN': {
+                  'Gamepad Support': '游戏手柄支持',
+                  'Navigate with a connected controller': '使用已连接的控制器进行导航',
+              },
+              'zh-TW': {
+                  'Gamepad Support': '手把支援',
+                  'Navigate with a connected controller': '使用已連接的手把進行導覽',
+              },
+          }
+          for locale, values in additions.items():
+              path = Path(f'apps/readest-app/public/locales/{locale}/translation.json')
+              data = json.loads(path.read_text())
+              data.update(values)
+              path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+          PY
+            git add apps/readest-app/public/locales/zh-CN/translation.json apps/readest-app/public/locales/zh-TW/translation.json
             git cherry-pick --continue
           fi
 
           missing=0
           for file in apps/readest-app/public/locales/*/translation.json; do
+            case "$file" in
+              */en/translation.json) continue ;;
+            esac
             if ! grep -Fq '"Gamepad Support"' "$file" || ! grep -Fq '"Navigate with a connected controller"' "$file"; then
-              echo "Missing existing Gamepad translations in $file"
+              echo "Missing Gamepad translations in $file"
               missing=1
             fi
           done
