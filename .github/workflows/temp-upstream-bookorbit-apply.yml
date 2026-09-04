@@ -1,0 +1,72 @@
+name: Temporary upstream BookOrbit apply
+
+on:
+  push:
+    branches:
+      - integrate/upstream-bookorbit-2026-09-04
+    paths:
+      - .github/workflows/temp-upstream-bookorbit-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Apply upstream BookOrbit manual sync while preserving fork locales
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_commit='9e316c7d78fb4a693cdf8797de27a5967583c487'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch --no-tags upstream "$upstream_commit"
+
+          if ! git cherry-pick "$upstream_commit"; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            unexpected="$(printf '%s\n' "$conflicts" | grep -vE '^apps/readest-app/public/locales/[^/]+/translation\.json$' || true)"
+            if [ -n "$unexpected" ]; then
+              echo 'Unexpected non-locale BookOrbit conflicts:'
+              printf '%s\n' "$unexpected"
+              exit 1
+            fi
+
+            for file in $conflicts; do
+              git checkout --ours -- "$file"
+            done
+
+            python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          commit = '9e316c7d78fb4a693cdf8797de27a5967583c487'
+          key = 'BookOrbit Sync'
+          for path in Path('apps/readest-app/public/locales').glob('*/translation.json'):
+              rel = path.as_posix()
+              try:
+                  upstream = json.loads(subprocess.check_output(['git', 'show', f'{commit}:{rel}'], text=True))
+              except subprocess.CalledProcessError:
+                  continue
+              if key not in upstream:
+                  continue
+              ours = json.loads(path.read_text())
+              ours[key] = upstream[key]
+              path.write_text(json.dumps(ours, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+            git add apps/readest-app/public/locales/*/translation.json
+            git cherry-pick --continue
+          fi
+
+          git diff --check HEAD~1..HEAD
+          git push origin HEAD:integrate/upstream-bookorbit-2026-09-04
