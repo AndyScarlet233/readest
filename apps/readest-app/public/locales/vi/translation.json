@@ -2242,5 +2242,9 @@
   "Gamepad Support": "Hỗ trợ tay cầm chơi game",
   "Navigate with a connected controller": "Điều hướng bằng tay cầm đã kết nối",
   "Lock Horizontal Panning": "Khóa di chuyển ngang",
-  "BookOrbit Sync": "Đồng bộ BookOrbit"
+  "Select ReadEra Backup File": "Chọn tệp sao lưu ReadEra",
+  "This is not a ReadEra backup file.": "Đây không phải tệp sao lưu ReadEra.",
+  "This book was not found in the ReadEra backup.": "Không tìm thấy cuốn sách này trong bản sao lưu ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Tệp sao lưu ReadEra (.bak)"
 }

@@ -2302,5 +2302,9 @@
   "Gamepad Support": "Geympad qoʻllab-quvvatlashi",
   "Navigate with a connected controller": "Ulangan boshqaruv pulti bilan harakatlanish",
   "Lock Horizontal Panning": "Gorizontal siljitishni quflash",
-  "BookOrbit Sync": "BookOrbit sinxronlash"
+  "Select ReadEra Backup File": "ReadEra zaxira nusxa faylini tanlang",
+  "This is not a ReadEra backup file.": "Bu ReadEra zaxira nusxa fayli emas.",
+  "This book was not found in the ReadEra backup.": "Bu kitob ReadEra zaxira nusxasida topilmadi.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra zaxira nusxa fayli (.bak)"
 }

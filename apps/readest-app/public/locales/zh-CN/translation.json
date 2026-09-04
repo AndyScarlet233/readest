@@ -2282,5 +2282,6 @@
   "This Notion database has multiple data sources. Paste a data source ID instead.": "此 Notion 数据库包含多个数据源。请改为粘贴数据源 ID。",
   "The Notion database is unavailable or has not been shared with this integration.": "Notion 数据库不可用，或尚未共享给此集成。",
   "Lock Horizontal Panning": "锁定水平平移",
-  "BookOrbit Sync": "BookOrbit 同步"
+  "Gamepad Support": "游戏手柄支持",
+  "Navigate with a connected controller": "使用已连接的控制器进行导航"
 }

@@ -2362,5 +2362,9 @@
   "Gamepad Support": "Suport pentru gamepad",
   "Navigate with a connected controller": "Navigare cu un controler conectat",
   "Lock Horizontal Panning": "Blochează deplasarea orizontală",
-  "BookOrbit Sync": "Sincronizare BookOrbit"
+  "Select ReadEra Backup File": "Selectează fișierul de backup ReadEra",
+  "This is not a ReadEra backup file.": "Acesta nu este un fișier de backup ReadEra.",
+  "This book was not found in the ReadEra backup.": "Această carte nu a fost găsită în backupul ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Fișier de backup ReadEra (.bak)"
 }

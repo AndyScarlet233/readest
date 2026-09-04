@@ -2362,5 +2362,9 @@
   "Gamepad Support": "תמיכה בבקר משחק",
   "Navigate with a connected controller": "ניווט באמצעות בקר מחובר",
   "Lock Horizontal Panning": "נעל הזזה אופקית",
-  "BookOrbit Sync": "סנכרון BookOrbit"
+  "Select ReadEra Backup File": "בחר קובץ גיבוי של ReadEra",
+  "This is not a ReadEra backup file.": "זהו אינו קובץ גיבוי של ReadEra.",
+  "This book was not found in the ReadEra backup.": "הספר הזה לא נמצא בגיבוי של ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "קובץ גיבוי של ReadEra ‏(.bak)"
 }

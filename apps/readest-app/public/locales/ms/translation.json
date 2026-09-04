@@ -2242,5 +2242,9 @@
   "Gamepad Support": "Sokongan Gamepad",
   "Navigate with a connected controller": "Navigasi dengan pengawal yang disambungkan",
   "Lock Horizontal Panning": "Kunci gerakan mengufuk",
-  "BookOrbit Sync": "Penyegerakan BookOrbit"
+  "Select ReadEra Backup File": "Pilih fail sandaran ReadEra",
+  "This is not a ReadEra backup file.": "Ini bukan fail sandaran ReadEra.",
+  "This book was not found in the ReadEra backup.": "Buku ini tidak ditemui dalam sandaran ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Fail sandaran ReadEra (.bak)"
 }

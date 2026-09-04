@@ -2362,5 +2362,9 @@
   "Gamepad Support": "Suporte a gamepad",
   "Navigate with a connected controller": "Navegar com um controle conectado",
   "Lock Horizontal Panning": "Bloquear deslocamento horizontal",
-  "BookOrbit Sync": "Sincronização do BookOrbit"
+  "Select ReadEra Backup File": "Selecionar ficheiro de backup do ReadEra",
+  "This is not a ReadEra backup file.": "Este não é um ficheiro de backup do ReadEra.",
+  "This book was not found in the ReadEra backup.": "Este livro não foi encontrado no backup do ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Ficheiro de backup do ReadEra (.bak)"
 }
