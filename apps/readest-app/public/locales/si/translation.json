@@ -2300,5 +2300,10 @@
   "Navigate with a connected controller": "සම්බන්ධිත පාලකයක් සමඟ සංචලනය කරන්න",
   "Lock Horizontal Panning": "තිරස් චලනය අගුළු දමන්න",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} ඔබට පොත් {{count}}ක් යැවීමට කැමතියි",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} ඔබට පොත් {{count}}ක් යැවීමට කැමතියි"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} ඔබට පොත් {{count}}ක් යැවීමට කැමතියි",
+  "Select ReadEra Backup File": "ReadEra උපස්ථ ගොනුව තෝරන්න",
+  "This is not a ReadEra backup file.": "මෙය ReadEra උපස්ථ ගොනුවක් නොවේ.",
+  "This book was not found in the ReadEra backup.": "මෙම පොත ReadEra උපස්ථයේ හමු නොවීය.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra උපස්ථ ගොනුව (.bak)"
 }

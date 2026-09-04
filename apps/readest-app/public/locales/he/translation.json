@@ -2360,5 +2360,10 @@
   "Lock Horizontal Panning": "נעל הזזה אופקית",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} רוצה לשלוח לכם ספר אחד",
   "{{alias}} wants to send you {{count}} book(s)_two": "{{alias}} רוצה לשלוח לכם {{count}} ספרים",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} רוצה לשלוח לכם {{count}} ספרים"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} רוצה לשלוח לכם {{count}} ספרים",
+  "Select ReadEra Backup File": "בחר קובץ גיבוי של ReadEra",
+  "This is not a ReadEra backup file.": "זהו אינו קובץ גיבוי של ReadEra.",
+  "This book was not found in the ReadEra backup.": "הספר הזה לא נמצא בגיבוי של ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "קובץ גיבוי של ReadEra ‏(.bak)"
 }

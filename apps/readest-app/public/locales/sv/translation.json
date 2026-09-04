@@ -2300,5 +2300,10 @@
   "Navigate with a connected controller": "Navigera med en ansluten handkontroll",
   "Lock Horizontal Panning": "Lås horisontell panorering",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} vill skicka {{count}} bok till dig",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vill skicka {{count}} böcker till dig"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vill skicka {{count}} böcker till dig",
+  "Select ReadEra Backup File": "Välj ReadEra-säkerhetskopia",
+  "This is not a ReadEra backup file.": "Det här är inte en ReadEra-säkerhetskopia.",
+  "This book was not found in the ReadEra backup.": "Den här boken hittades inte i ReadEra-säkerhetskopian.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra-säkerhetskopia (.bak)"
 }

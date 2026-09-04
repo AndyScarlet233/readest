@@ -2420,5 +2420,10 @@
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} vam želi poslati {{count}} knjigo",
   "{{alias}} wants to send you {{count}} book(s)_two": "{{alias}} vam želi poslati {{count}} knjigi",
   "{{alias}} wants to send you {{count}} book(s)_few": "{{alias}} vam želi poslati {{count}} knjige",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vam želi poslati {{count}} knjig"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vam želi poslati {{count}} knjig",
+  "Select ReadEra Backup File": "Izberite datoteko varnostne kopije ReadEra",
+  "This is not a ReadEra backup file.": "To ni datoteka varnostne kopije ReadEra.",
+  "This book was not found in the ReadEra backup.": "Te knjige ni v varnostni kopiji ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Datoteka varnostne kopije ReadEra (.bak)"
 }

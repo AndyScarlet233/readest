@@ -2300,5 +2300,10 @@
   "Navigate with a connected controller": "پیمایش با دسته بازی متصل",
   "Lock Horizontal Panning": "قفل کردن جابه‌جایی افقی",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} می‌خواهد {{count}} کتاب برای شما بفرستد",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} می‌خواهد {{count}} کتاب برای شما بفرستد"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} می‌خواهد {{count}} کتاب برای شما بفرستد",
+  "Select ReadEra Backup File": "انتخاب فایل پشتیبان ReadEra",
+  "This is not a ReadEra backup file.": "این یک فایل پشتیبان ReadEra نیست.",
+  "This book was not found in the ReadEra backup.": "این کتاب در پشتیبان ReadEra پیدا نشد.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "فایل پشتیبان ReadEra ‏(.bak)"
 }

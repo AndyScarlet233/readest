@@ -2300,5 +2300,10 @@
   "Navigate with a connected controller": "Navigálás csatlakoztatott kontrollerrel",
   "Lock Horizontal Panning": "Vízszintes mozgatás zárolása",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} {{count}} könyvet szeretne küldeni Önnek",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} {{count}} könyvet szeretne küldeni Önnek"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} {{count}} könyvet szeretne küldeni Önnek",
+  "Select ReadEra Backup File": "ReadEra biztonsági mentés kiválasztása",
+  "This is not a ReadEra backup file.": "Ez a fájl nem ReadEra biztonsági mentés.",
+  "This book was not found in the ReadEra backup.": "Ez a könyv nem található a ReadEra biztonsági mentésben.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra biztonsági mentés fájlja (.bak)"
 }

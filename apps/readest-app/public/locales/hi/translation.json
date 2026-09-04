@@ -2300,5 +2300,10 @@
   "Navigate with a connected controller": "कनेक्टेड कंट्रोलर से नेविगेट करें",
   "Lock Horizontal Panning": "क्षैतिज पैनिंग लॉक करें",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} आपको {{count}} पुस्तक भेजना चाहता है",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} आपको {{count}} पुस्तकें भेजना चाहता है"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} आपको {{count}} पुस्तकें भेजना चाहता है",
+  "Select ReadEra Backup File": "ReadEra बैकअप फ़ाइल चुनें",
+  "This is not a ReadEra backup file.": "यह ReadEra बैकअप फ़ाइल नहीं है।",
+  "This book was not found in the ReadEra backup.": "यह पुस्तक ReadEra बैकअप में नहीं मिली।",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra बैकअप फ़ाइल (.bak)"
 }

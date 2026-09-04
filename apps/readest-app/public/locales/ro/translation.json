@@ -2360,5 +2360,10 @@
   "Lock Horizontal Panning": "Blochează deplasarea orizontală",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} vrea să vă trimită {{count}} carte",
   "{{alias}} wants to send you {{count}} book(s)_few": "{{alias}} vrea să vă trimită {{count}} cărți",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vrea să vă trimită {{count}} de cărți"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} vrea să vă trimită {{count}} de cărți",
+  "Select ReadEra Backup File": "Selectează fișierul de backup ReadEra",
+  "This is not a ReadEra backup file.": "Acesta nu este un fișier de backup ReadEra.",
+  "This book was not found in the ReadEra backup.": "Această carte nu a fost găsită în backupul ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Fișier de backup ReadEra (.bak)"
 }

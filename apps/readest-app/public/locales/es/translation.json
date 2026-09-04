@@ -2360,5 +2360,10 @@
   "Lock Horizontal Panning": "Bloquear el movimiento horizontal",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} quiere enviarte {{count}} libro",
   "{{alias}} wants to send you {{count}} book(s)_many": "{{alias}} quiere enviarte {{count}} libros",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} quiere enviarte {{count}} libros"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} quiere enviarte {{count}} libros",
+  "Select ReadEra Backup File": "Seleccionar archivo de copia de seguridad de ReadEra",
+  "This is not a ReadEra backup file.": "Este no es un archivo de copia de seguridad de ReadEra.",
+  "This book was not found in the ReadEra backup.": "Este libro no se encontró en la copia de seguridad de ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Archivo de copia de seguridad de ReadEra (.bak)"
 }

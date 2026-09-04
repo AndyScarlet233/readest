@@ -2300,5 +2300,10 @@
   "Navigate with a connected controller": "Ulangan boshqaruv pulti bilan harakatlanish",
   "Lock Horizontal Panning": "Gorizontal siljitishni quflash",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} sizga {{count}} ta kitob yubormoqchi",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} sizga {{count}} ta kitob yubormoqchi"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} sizga {{count}} ta kitob yubormoqchi",
+  "Select ReadEra Backup File": "ReadEra zaxira nusxa faylini tanlang",
+  "This is not a ReadEra backup file.": "Bu ReadEra zaxira nusxa fayli emas.",
+  "This book was not found in the ReadEra backup.": "Bu kitob ReadEra zaxira nusxasida topilmadi.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra zaxira nusxa fayli (.bak)"
 }

@@ -2240,5 +2240,10 @@
   "Gamepad Support": "ゲームパッド対応",
   "Navigate with a connected controller": "接続したコントローラーで操作する",
   "Lock Horizontal Panning": "横方向の移動をロック",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}}が{{count}}冊の本を送信しようとしています"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}}が{{count}}冊の本を送信しようとしています",
+  "Select ReadEra Backup File": "ReadEra のバックアップファイルを選択",
+  "This is not a ReadEra backup file.": "これは ReadEra のバックアップファイルではありません。",
+  "This book was not found in the ReadEra backup.": "この本は ReadEra のバックアップに見つかりませんでした。",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra のバックアップファイル (.bak)"
 }

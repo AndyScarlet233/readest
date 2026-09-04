@@ -2300,5 +2300,10 @@
   "Navigate with a connected controller": "Navigeren met een aangesloten controller",
   "Lock Horizontal Panning": "Horizontaal verschuiven vergrendelen",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} wil u {{count}} boek sturen",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} wil u {{count}} boeken sturen"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} wil u {{count}} boeken sturen",
+  "Select ReadEra Backup File": "ReadEra-back-upbestand selecteren",
+  "This is not a ReadEra backup file.": "Dit is geen ReadEra-back-upbestand.",
+  "This book was not found in the ReadEra backup.": "Dit boek is niet gevonden in de ReadEra-back-up.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "ReadEra-back-upbestand (.bak)"
 }

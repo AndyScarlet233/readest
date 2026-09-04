@@ -2420,5 +2420,10 @@
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} хочет отправить вам {{count}} книгу",
   "{{alias}} wants to send you {{count}} book(s)_few": "{{alias}} хочет отправить вам {{count}} книги",
   "{{alias}} wants to send you {{count}} book(s)_many": "{{alias}} хочет отправить вам {{count}} книг",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} хочет отправить вам {{count}} книги"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} хочет отправить вам {{count}} книги",
+  "Select ReadEra Backup File": "Выберите файл резервной копии ReadEra",
+  "This is not a ReadEra backup file.": "Это не файл резервной копии ReadEra.",
+  "This book was not found in the ReadEra backup.": "Эта книга не найдена в резервной копии ReadEra.",
+  "ReadEra": "ReadEra",
+  "ReadEra backup file (.bak)": "Файл резервной копии ReadEra (.bak)"
 }
