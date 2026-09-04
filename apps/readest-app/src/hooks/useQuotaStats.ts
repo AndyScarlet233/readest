@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { QuotaType, UserPlan } from '@/types/quota';
 import {
@@ -15,10 +15,23 @@ export const useQuotaStats = (briefName = false) => {
   const { token, user } = useAuth();
   const [quotas, setQuotas] = useState<QuotaType[]>([]);
   const [userProfilePlan, setUserProfilePlan] = useState<UserPlan | undefined>(undefined);
-  const [customizationPurchased, setCustomizationPurchased] = useState(false);
+  // Derived, not state: state lags one render behind a token change, which
+  // would briefly report the previous account's entitlement after a switch or
+  // a sign-out.
+  const customizationPurchased = useMemo(
+    () => (token ? getCustomizationPurchased(token) : false),
+    [token],
+  );
 
   useEffect(() => {
-    if (!user || !token) return;
+    if (!user || !token) {
+      // Signing out must clear the module-level plan cache. Non-React gates
+      // read it synchronously, so leaving the previous account's plan behind
+      // would make the next signed-out render inherit stale privileges.
+      setUserProfilePlan(undefined);
+      setCachedUserPlan(undefined);
+      return;
+    }
 
     const storagPlan = getStoragePlanData(token);
     const inGB = storagPlan.quota > 1e9;
@@ -50,7 +63,6 @@ export const useQuotaStats = (briefName = false) => {
     };
     const profilePlan = getUserProfilePlan(token);
     setUserProfilePlan(profilePlan);
-    setCustomizationPurchased(getCustomizationPurchased(token));
     // Non-React modules (transferManager, syncCategories) need the plan
     // synchronously for the cloud-sync provider gate; cache it here, the
     // one place the plan is resolved from the JWT.

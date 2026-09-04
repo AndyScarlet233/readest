@@ -1,0 +1,193 @@
+name: Temporary payment validation
+
+on:
+  push:
+    branches:
+      - integrate/upstream-account-payment-v2-2026-09-04
+
+permissions:
+  contents: write
+
+jobs:
+  payment-validation:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout payment branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Merge latest fork main without resolving conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "9102c12cac4a8b174ba2571b1ff84d2decb4a64c"
+          git merge --no-edit origin/main
+          git merge-base --is-ancestor 9102c12cac4a8b174ba2571b1ff84d2decb4a64c HEAD
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          key: payment-android-googleplay
+
+      - name: Setup Java 17
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+
+      - name: Install Android NDK
+        run: sdkmanager "ndk;28.2.13676358"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: Write deterministic test environment
+        run: |
+          cat > .env.local <<'EOF'
+          NEXT_PUBLIC_APP_PLATFORM=tauri
+          NEXT_PUBLIC_POSTHOG_KEY=
+          NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key
+          SENTRY_DSN=
+          EOF
+          cp .env.local apps/readest-app/.env.local
+
+      - name: Apply minimal Apple owner-query fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts';
+          const lines = fs.readFileSync(path, 'utf8').split('\n');
+          const needle = 'single: () => Promise.resolve({ data: state.paymentRow ?? null }),';
+          const matches = lines.flatMap((line, index) => (line.includes(needle) ? [index] : []));
+          if (matches.length !== 1) {
+            throw new Error(`expected exactly one paymentRow single fixture, found ${matches.length}`);
+          }
+          const singleIndex = matches[0];
+          const selectIndex = singleIndex - 2;
+          const expected = [
+            'select: () => ({',
+            'eq: () => ({',
+            needle,
+            'in: () => Promise.resolve({ data: state.completedPayments ?? [] }),',
+            '}),',
+            '}),',
+          ];
+          const actual = lines.slice(selectIndex, selectIndex + expected.length).map((line) => line.trim());
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`payments select fixture shape changed: ${JSON.stringify(actual)}`);
+          }
+          const indent = lines[selectIndex].match(/^\s*/)?.[0] ?? '';
+          const i1 = `${indent}  `;
+          const i2 = `${indent}    `;
+          const i3 = `${indent}      `;
+          lines.splice(
+            selectIndex,
+            expected.length,
+            `${indent}select: (columns?: string) => ({`,
+            `${i1}eq: () => ({`,
+            `${i2}single: () =>`,
+            `${i3}Promise.resolve({`,
+            `${i3}  data:`,
+            `${i3}    columns === 'user_id' && state.existingPaymentOwner !== undefined`,
+            `${i3}      ? { user_id: state.existingPaymentOwner }`,
+            `${i3}      : (state.paymentRow ?? null),`,
+            `${i3}  error: null,`,
+            `${i3}}),`,
+            `${i2}in: () => Promise.resolve({ data: state.completedPayments ?? [] }),`,
+            `${i1}}),`,
+            `${indent}}),`,
+          );
+          fs.writeFileSync(path, lines.join('\n'));
+          NODE
+          git diff --check
+          file='apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts'
+          changed=$(git diff --numstat -- "$file" | awk '{print $1+$2}')
+          echo "Apple fixture changed lines: $changed"
+          test -n "$changed"
+          test "$changed" -le 20
+
+      - name: Run payment and merged-storage regression tests
+        run: |
+          pnpm --filter @readest/readest-app exec vitest run \
+            src/__tests__/api/google-iap-verify-consume.test.ts \
+            src/__tests__/api/storage-stats-live-usage.test.ts \
+            src/__tests__/app/api/stripe-plans-route.test.ts \
+            src/__tests__/app/api/stripe-portal-flow.test.ts \
+            src/__tests__/app/user/plan.test.ts \
+            src/__tests__/app/user/plans-comparison.test.tsx \
+            src/__tests__/hooks/useQuotaStats-signout.test.ts \
+            src/__tests__/libs/payment/apple-iap-app-account-token.test.ts \
+            src/__tests__/libs/payment/apple-notifications.test.ts \
+            src/__tests__/libs/payment/apple-payment-ownership-race.test.ts \
+            src/__tests__/libs/payment/purchased-features.test.ts \
+            --maxWorkers=2
+
+      - name: Regenerate Android scaffolding
+        run: |
+          cd apps/readest-app
+          rm -rf src-tauri/gen/android
+          pnpm tauri android init
+
+      - name: Build Google Play Android debug app through Tauri
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          ORG_GRADLE_PROJECT_storeFlavor: googleplay
+        run: |
+          cd apps/readest-app
+          pnpm tauri android build --debug -t aarch64 --config src-tauri/tauri.fork.conf.json
+          test -f src-tauri/gen/android/tauri.settings.gradle
+          test -f src-tauri/gen/android/app/tauri.build.gradle.kts
+
+      - name: Run Google Play billing bridge unit tests
+        env:
+          ORG_GRADLE_PROJECT_storeFlavor: googleplay
+        run: |
+          cd apps/readest-app/src-tauri/gen/android
+          chmod +x ./gradlew
+          ./gradlew testGoogleplayDebugUnitTest --stacktrace
+
+      - name: Commit validated merge and fixture; remove temporary workflow
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts'
+          changed=$(git diff --numstat -- "$file" | awk '{print $1+$2}')
+          test -n "$changed"
+          test "$changed" -le 20
+          git add "$file"
+          git rm .github/workflows/temp-payment-validation.yml
+          git diff --cached --check
+          git commit -m "test(payment): model owner lookup after insert race"
+          git push origin HEAD:integrate/upstream-account-payment-v2-2026-09-04
