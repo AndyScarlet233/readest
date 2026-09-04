@@ -75,31 +75,48 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const path = 'apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts';
-          const before = fs.readFileSync(path, 'utf8');
-          const oldBlock = `            select: () => ({
-              eq: () => ({
-                single: () => Promise.resolve({ data: state.paymentRow ?? null }),
-                in: () => Promise.resolve({ data: state.completedPayments ?? [] }),
-              }),
-            }),`;
-          const newBlock = `            select: (columns?: string) => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data:
-                      columns === 'user_id' && state.existingPaymentOwner !== undefined
-                        ? { user_id: state.existingPaymentOwner }
-                        : (state.paymentRow ?? null),
-                    error: null,
-                  }),
-                in: () => Promise.resolve({ data: state.completedPayments ?? [] }),
-              }),
-            }),`;
-          const occurrences = before.split(oldBlock).length - 1;
-          if (occurrences !== 1) {
-            throw new Error(`expected exactly one payments select fixture, found ${occurrences}`);
+          const lines = fs.readFileSync(path, 'utf8').split('\n');
+          const needle = 'single: () => Promise.resolve({ data: state.paymentRow ?? null }),';
+          const matches = lines.flatMap((line, index) => (line.includes(needle) ? [index] : []));
+          if (matches.length !== 1) {
+            throw new Error(`expected exactly one paymentRow single fixture, found ${matches.length}`);
           }
-          fs.writeFileSync(path, before.replace(oldBlock, newBlock));
+          const singleIndex = matches[0];
+          const selectIndex = singleIndex - 2;
+          const expected = [
+            'select: () => ({',
+            'eq: () => ({',
+            needle,
+            'in: () => Promise.resolve({ data: state.completedPayments ?? [] }),',
+            '}),',
+            '}),',
+          ];
+          const actual = lines.slice(selectIndex, selectIndex + expected.length).map((line) => line.trim());
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`payments select fixture shape changed: ${JSON.stringify(actual)}`);
+          }
+          const indent = lines[selectIndex].match(/^\s*/)?.[0] ?? '';
+          const i1 = `${indent}  `;
+          const i2 = `${indent}    `;
+          const i3 = `${indent}      `;
+          lines.splice(
+            selectIndex,
+            expected.length,
+            `${indent}select: (columns?: string) => ({`,
+            `${i1}eq: () => ({`,
+            `${i2}single: () =>`,
+            `${i3}Promise.resolve({`,
+            `${i3}  data:`,
+            `${i3}    columns === 'user_id' && state.existingPaymentOwner !== undefined`,
+            `${i3}      ? { user_id: state.existingPaymentOwner }`,
+            `${i3}      : (state.paymentRow ?? null),`,
+            `${i3}  error: null,`,
+            `${i3}}),`,
+            `${i2}in: () => Promise.resolve({ data: state.completedPayments ?? [] }),`,
+            `${i1}}),`,
+            `${indent}}),`,
+          );
+          fs.writeFileSync(path, lines.join('\n'));
           NODE
           git diff --check
           file='apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts'
