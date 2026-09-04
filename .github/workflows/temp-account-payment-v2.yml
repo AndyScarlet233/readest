@@ -33,6 +33,7 @@ jobs:
             7a1c56af1fba3a320e71a98413bebc21dfaf9dc7
           )
           quota_hook="apps/readest-app/src/hooks/useQuotaStats.ts"
+          access_file="apps/readest-app/src/utils/access.ts"
           for commit in "${commits[@]}"; do
             if git cherry-pick "$commit"; then
               continue
@@ -40,13 +41,28 @@ jobs:
 
             mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
             if [[ "$commit" == "9e51f4df5e68e3077dce48f54ea49a43b254ec39" && "${#conflicts[@]}" -eq 1 && "${conflicts[0]}" == "$quota_hook" ]]; then
-              # This is the one expected overlap with #38. Take the payment
-              # series version here; later commits in the same reviewed series
-              # remove the old customization sync-cache coupling while keeping
-              # the current JWT entitlement exposed to React consumers.
+              # Expected overlap with #38. The payment-series hook fixes stale
+              # account/sign-out entitlement state; later commits remove its
+              # temporary customization sync-cache coupling.
               git checkout --theirs -- "$quota_hook"
               git add "$quota_hook"
               GIT_EDITOR=true git cherry-pick --continue
+              continue
+            fi
+
+            if [[ "$commit" == "7653c8b80467318eae0bce341e2f4175df66600d" && "${#conflicts[@]}" -eq 1 && "${conflicts[0]}" == "$access_file" ]]; then
+              # Current main already exposes customization_purchased and is a
+              # strict superset of this old commit: it also retains FORK_UNLOCK,
+              # Nearby pairing gates from #38, and optional-claim compatibility.
+              # Preserve current-main access semantics rather than regressing
+              # those fork customizations.
+              git checkout --ours -- "$access_file"
+              git add "$access_file"
+              if git diff --cached --quiet; then
+                git cherry-pick --skip
+              else
+                GIT_EDITOR=true git cherry-pick --continue
+              fi
               continue
             fi
 
