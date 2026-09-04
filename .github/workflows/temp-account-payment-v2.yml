@@ -32,15 +32,29 @@ jobs:
             52c29897f24ecc526f530a87999ddeaacb6ec321
             7a1c56af1fba3a320e71a98413bebc21dfaf9dc7
           )
+          quota_hook="apps/readest-app/src/hooks/useQuotaStats.ts"
           for commit in "${commits[@]}"; do
-            if ! git cherry-pick "$commit"; then
-              echo "::error::Cherry-pick stopped at $commit. Refusing automatic conflict resolution."
-              echo "Conflicted paths:"
-              git diff --name-only --diff-filter=U
-              git status --short
-              git cherry-pick --abort
-              exit 1
+            if git cherry-pick "$commit"; then
+              continue
             fi
+
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            if [[ "$commit" == "9e51f4df5e68e3077dce48f54ea49a43b254ec39" && "${#conflicts[@]}" -eq 1 && "${conflicts[0]}" == "$quota_hook" ]]; then
+              # This is the one expected overlap with #38. Take the payment
+              # series version here; later commits in the same reviewed series
+              # remove the old customization sync-cache coupling while keeping
+              # the current JWT entitlement exposed to React consumers.
+              git checkout --theirs -- "$quota_hook"
+              git add "$quota_hook"
+              GIT_EDITOR=true git cherry-pick --continue
+              continue
+            fi
+
+            echo "::error::Unexpected cherry-pick conflict at $commit. Refusing automatic resolution."
+            printf 'Conflicted paths:\n%s\n' "${conflicts[*]}"
+            git status --short
+            git cherry-pick --abort
+            exit 1
           done
 
       - name: Remove temporary workflow and push
