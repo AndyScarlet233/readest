@@ -206,7 +206,10 @@ const LocalSendManager: React.FC = () => {
   // This is presence only - the service keeps running, nothing disconnects.
   useEffect(() => {
     if (!isTauriAppPlatform()) return;
+    let generation = 0;
+    let disposed = false;
     const sync = async () => {
+      const currentGeneration = ++generation;
       if (!isLocalSendEnabled()) return;
       const visible = document.visibilityState === 'visible';
       if (!visible) {
@@ -220,7 +223,11 @@ const LocalSendManager: React.FC = () => {
       // showed nothing until the user toggled the setting off and on). Trust a
       // liveness probe, not the stored flag, and rebuild the service when it
       // fails: `stop` first, or `start` would hand back the dead one.
-      if (!(await isLocalSendAlive().catch(() => false))) {
+      const alive = await isLocalSendAlive().catch(() => false);
+      if (disposed || currentGeneration !== generation || document.visibilityState !== 'visible') {
+        return;
+      }
+      if (!alive) {
         await stopLocalSend().catch(() => {});
         void syncServiceState();
         return;
@@ -229,7 +236,11 @@ const LocalSendManager: React.FC = () => {
     };
     const onVisibilityChange = () => void sync();
     document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      disposed = true;
+      generation += 1;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [syncServiceState]);
 
   // The alias change flow restarts the service (stop, then start with the new

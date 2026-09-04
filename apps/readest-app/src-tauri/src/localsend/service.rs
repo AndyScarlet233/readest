@@ -393,7 +393,11 @@ pub fn device_payloads(
     departed: &DepartedPeers,
 ) -> Vec<DevicePayload> {
     let now = SystemTime::now();
-    let departed = departed.lock().unwrap().clone();
+    let departed = {
+        let mut departed = departed.lock().unwrap();
+        departed.retain(|_, at| peer_has_departed(Some(*at), now));
+        departed.clone()
+    };
     discovery
         .devices()
         .into_iter()
@@ -1284,6 +1288,32 @@ mod tests {
         // last-seen timestamp changed.
         departed.lock().unwrap().remove("peer-fp");
         assert_eq!(device_payloads(&discovery, &departed).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn device_payloads_prunes_expired_departures() {
+        let dir = std::env::temp_dir().join(format!("ls-prune-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_file(dir.join("identity.pem"));
+        let identity =
+            Identity::load_or_generate(&dir, "Readest".into(), "macOS".into()).unwrap();
+        let discovery = test_discovery(&identity);
+        let now = SystemTime::now();
+        let departed: DepartedPeers = Arc::new(StdMutex::new(HashMap::from([
+            ("fresh".to_string(), now),
+            (
+                "stale".to_string(),
+                now - DEPARTURE_HOLD - Duration::from_secs(1),
+            ),
+        ])));
+
+        let _ = device_payloads(&discovery, &departed);
+
+        let departed = departed.lock().unwrap();
+        assert!(departed.contains_key("fresh"));
+        assert!(!departed.contains_key("stale"));
+        drop(departed);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

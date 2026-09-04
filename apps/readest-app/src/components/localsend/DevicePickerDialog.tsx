@@ -327,7 +327,7 @@ const DevicePickerDialog: React.FC<DevicePickerDialogProps> = ({ files, onClose 
             </div>
           </div>
 
-          {!status?.running ? (
+          {!status?.running && !sendState ? (
             <div className='flex flex-col items-start gap-2 text-sm'>
               <span>{_('Enable Nearby BookDrop in Settings to send books.')}</span>
               <button
@@ -384,7 +384,7 @@ const DevicePickerDialog: React.FC<DevicePickerDialogProps> = ({ files, onClose 
             </div>
           )}
 
-          {status?.running && sendState && (
+          {sendState && (
             <div className='flex items-center justify-between gap-2 text-sm'>
               <span className='truncate'>
                 {_('Sending to {{alias}}', { alias: sendState.deviceAlias })} · {percent}%
