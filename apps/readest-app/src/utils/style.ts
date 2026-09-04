@@ -1335,6 +1335,7 @@ export const applyScrollModeClass = (document: Document, isScrollMode: boolean) 
 
 // A prefixed attribute name, e.g. the `epub:type` of `epub:type="chapter"`.
 const PREFIXED_ATTR_REGEX = /^([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)$/;
+const EPUB_OPS_NAMESPACE = 'http://www.idpf.org/2007/ops';
 
 /**
  * Re-attach the namespaces an XHTML section declared to its prefixed
@@ -1368,7 +1369,12 @@ export const applyNamespacedAttributes = (document: Document) => {
     for (const { name, value } of Array.from(element.attributes)) {
       const [, prefix, localName] = PREFIXED_ATTR_REGEX.exec(name) ?? [];
       if (!prefix) continue;
-      const uri = lookupNamespace(element, prefix);
+      // Foliate can hand us a section fragment rather than the source XHTML
+      // document, so the declaration on the original <html> may be gone.
+      // `epub` has one fixed namespace in EPUB, which is enough to restore the
+      // selectors used by the book's stylesheet (including noteref markers).
+      const uri =
+        lookupNamespace(element, prefix) ?? (prefix === 'epub' ? EPUB_OPS_NAMESPACE : null);
       if (uri && !element.hasAttributeNS(uri, localName!)) {
         element.setAttributeNS(uri, name, value);
       }

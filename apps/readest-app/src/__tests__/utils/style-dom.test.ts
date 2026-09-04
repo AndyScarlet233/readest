@@ -686,13 +686,19 @@ describe('applyNamespacedAttributes', () => {
     expect(doc.querySelector('div')!.getAttributeNS(OPS, 'type')).toBe('chapter');
   });
 
-  it('picks up a declaration made further down the document', () => {
+  it('restores the standard EPUB namespace when a section fragment lost its declaration', () => {
+    const doc = parseAsSrcdoc('<a epub:type="noteref">1</a>', '');
+    applyNamespacedAttributes(doc);
+    expect(doc.querySelector('a')!.getAttributeNS(OPS, 'type')).toBe('noteref');
+  });
+
+  it('uses the EPUB fallback alongside an unrelated namespace declaration', () => {
     const doc = parseAsSrcdoc(
-      '<section xmlns:epub="http://www.idpf.org/2007/ops"><div epub:type="chapter">x</div></section>',
+      '<section xmlns:svg="http://www.w3.org/2000/svg"><a epub:type="noteref">1</a></section>',
       '',
     );
     applyNamespacedAttributes(doc);
-    expect(doc.querySelector('div')!.getAttributeNS(OPS, 'type')).toBe('chapter');
+    expect(doc.querySelector('a')!.getAttributeNS(OPS, 'type')).toBe('noteref');
   });
 
   it('leaves the reserved xml and xmlns names untouched', () => {
@@ -713,7 +719,7 @@ describe('applyNamespacedAttributes', () => {
     );
     applyNamespacedAttributes(doc);
     expect(doc.querySelector('#a')!.getAttributeNS(OPS, 'type')).toBe('chapter');
-    expect(doc.querySelector('#b')!.getAttributeNS(OPS, 'type')).toBeNull();
+    expect(doc.querySelector('#b')!.getAttributeNS(OPS, 'type')).toBe('chapter');
   });
 
   it('restores the outer binding once a rebinding subtree ends', () => {
