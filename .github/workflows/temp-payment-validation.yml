@@ -55,6 +55,46 @@ jobs:
           EOF
           cp .env.local apps/readest-app/.env.local
 
+      - name: Apply minimal Apple owner-query fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts';
+          const before = fs.readFileSync(path, 'utf8');
+          const oldBlock = `            select: () => ({
+              eq: () => ({
+                single: () => Promise.resolve({ data: state.paymentRow ?? null }),
+                in: () => Promise.resolve({ data: state.completedPayments ?? [] }),
+              }),
+            }),`;
+          const newBlock = `            select: (columns?: string) => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data:
+                      columns === 'user_id' && state.existingPaymentOwner !== undefined
+                        ? { user_id: state.existingPaymentOwner }
+                        : (state.paymentRow ?? null),
+                    error: null,
+                  }),
+                in: () => Promise.resolve({ data: state.completedPayments ?? [] }),
+              }),
+            }),`;
+          const occurrences = before.split(oldBlock).length - 1;
+          if (occurrences !== 1) {
+            throw new Error(`expected exactly one payments select fixture, found ${occurrences}`);
+          }
+          fs.writeFileSync(path, before.replace(oldBlock, newBlock));
+          NODE
+          git diff --check
+          file='apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts'
+          changed=$(git diff --numstat -- "$file" | awk '{print $1+$2}')
+          echo "Apple fixture changed lines: $changed"
+          test -n "$changed"
+          test "$changed" -le 20
+
       - name: Run payment regression tests
         run: |
           pnpm --filter @readest/readest-app exec vitest run \
@@ -82,11 +122,19 @@ jobs:
           chmod +x ./gradlew
           ./gradlew compileGoogleplayDebugKotlin testGoogleplayDebugUnitTest --stacktrace
 
-      - name: Remove temporary workflow
+      - name: Commit validated fixture and remove temporary workflow
         if: success()
+        shell: bash
         run: |
+          set -euo pipefail
+          file='apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts'
+          changed=$(git diff --numstat -- "$file" | awk '{print $1+$2}')
+          test -n "$changed"
+          test "$changed" -le 20
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
           git rm .github/workflows/temp-payment-validation.yml
-          git commit -m "chore: remove temporary payment validation workflow"
+          git diff --cached --check
+          git commit -m "test(payment): model owner lookup after insert race"
           git push origin HEAD:integrate/upstream-account-payment-v2-2026-09-04
