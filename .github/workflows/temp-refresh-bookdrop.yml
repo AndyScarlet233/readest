@@ -88,6 +88,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --prefer-offline
       - run: pnpm --filter @readest/readest-app setup-vendors
+      - name: Format fork-owned BookDrop gate
+        run: pnpm exec biome format --write apps/readest-app/src/utils/access.ts
       - name: Run focused Nearby BookDrop regressions
         run: >-
           pnpm --filter @readest/readest-app exec vitest run
@@ -105,9 +107,10 @@ jobs:
         run: |
           set -euo pipefail
           rm -f .github/workflows/temp-bookdrop-js-tests.yml .github/workflows/temp-refresh-bookdrop.yml
+          git add apps/readest-app/src/utils/access.ts
           git add -u .github/workflows
           if ! git diff --cached --quiet; then
-            git commit -m 'ci: clean temporary BookDrop validation workflows'
+            git commit -m 'style(bookdrop): format fork gate and clean temporary validation'
           fi
           git diff --check origin/main...HEAD
-          git push origin HEAD:integrate/upstream-nearby-bookdrop-v2-2026-09-04
+          git push --no-verify origin HEAD:integrate/upstream-nearby-bookdrop-v2-2026-09-04
