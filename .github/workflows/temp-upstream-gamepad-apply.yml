@@ -1,0 +1,47 @@
+name: Temporary upstream gamepad apply
+
+on:
+  push:
+    branches:
+      - integrate/upstream-gamepad-complete-2026-09-04
+    paths:
+      - .github/workflows/temp-upstream-gamepad-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Apply upstream gamepad commit without replacing fork locales
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch --no-tags upstream b12932da9a489951f2d1a0e0175ed24de61ce183
+          if ! git cherry-pick b12932da9a489951f2d1a0e0175ed24de61ce183; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            unexpected="$(printf '%s\n' "$conflicts" | grep -vE '^apps/readest-app/public/locales/(zh-CN|zh-TW)/translation\.json$' || true)"
+            if [ -n "$unexpected" ]; then
+              echo 'Unexpected gamepad conflicts:'
+              printf '%s\n' "$unexpected"
+              exit 1
+            fi
+            for file in $conflicts; do
+              git checkout --ours -- "$file"
+              git add "$file"
+            done
+            git cherry-pick --continue
+          fi
+          git diff --check HEAD~1..HEAD
+          git push origin HEAD:integrate/upstream-gamepad-complete-2026-09-04
