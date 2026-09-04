@@ -31,9 +31,9 @@ jobs:
           git fetch --no-tags upstream b12932da9a489951f2d1a0e0175ed24de61ce183
           if ! git cherry-pick b12932da9a489951f2d1a0e0175ed24de61ce183; then
             conflicts="$(git diff --name-only --diff-filter=U)"
-            unexpected="$(printf '%s\n' "$conflicts" | grep -vE '^apps/readest-app/public/locales/(zh-CN|zh-TW)/translation\.json$' || true)"
+            unexpected="$(printf '%s\n' "$conflicts" | grep -vE '^apps/readest-app/public/locales/[^/]+/translation\.json$' || true)"
             if [ -n "$unexpected" ]; then
-              echo 'Unexpected gamepad conflicts:'
+              echo 'Unexpected non-locale gamepad conflicts:'
               printf '%s\n' "$unexpected"
               exit 1
             fi
@@ -43,5 +43,15 @@ jobs:
             done
             git cherry-pick --continue
           fi
+
+          missing=0
+          for file in apps/readest-app/public/locales/*/translation.json; do
+            if ! grep -Fq '"Gamepad Support"' "$file" || ! grep -Fq '"Navigate with a connected controller"' "$file"; then
+              echo "Missing existing Gamepad translations in $file"
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
+
           git diff --check HEAD~1..HEAD
           git push origin HEAD:integrate/upstream-gamepad-complete-2026-09-04
