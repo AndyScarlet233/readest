@@ -1,0 +1,113 @@
+name: Temporary refresh BookDrop integration
+
+on:
+  push:
+    branches:
+      - integrate/upstream-nearby-bookdrop-v2-2026-09-04
+    paths:
+      - .github/workflows/temp-refresh-bookdrop.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_APP_PLATFORM: tauri
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_POSTHOG_KEY: ''
+      SENTRY_DSN: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Merge latest main with semantic locale resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          if ! git merge --no-edit origin/main; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            unexpected="$(printf '%s\n' "$conflicts" | grep -vE '^apps/readest-app/public/locales/[^/]+/translation\.json$' || true)"
+            if [ -n "$unexpected" ]; then
+              echo 'Unexpected non-locale BookDrop refresh conflicts:'
+              printf '%s\n' "$unexpected"
+              exit 1
+            fi
+            python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          def load_stage(stage: int, path: str):
+              raw = subprocess.check_output(['git', 'show', f':{stage}:{path}'], text=True)
+              return json.loads(raw)
+
+          conflicts = subprocess.check_output(
+              ['git', 'diff', '--name-only', '--diff-filter=U'], text=True
+          ).splitlines()
+          missing = object()
+          for rel in conflicts:
+              base = load_stage(1, rel)
+              ours = load_stage(2, rel)
+              theirs = load_stage(3, rel)
+              merged = dict(ours)
+              keys = list(dict.fromkeys([*base.keys(), *ours.keys(), *theirs.keys()]))
+              for key in keys:
+                  b = base.get(key, missing)
+                  o = ours.get(key, missing)
+                  t = theirs.get(key, missing)
+                  if o == t:
+                      value = o
+                  elif o == b:
+                      value = t
+                  elif t == b:
+                      value = o
+                  else:
+                      raise SystemExit(f'Conflicting locale key in {rel}: {key}')
+                  if value is missing:
+                      merged.pop(key, None)
+                  else:
+                      merged[key] = value
+              Path(rel).write_text(json.dumps(merged, ensure_ascii=False, indent=2) + '\n')
+          PY
+            git add apps/readest-app/public/locales/*/translation.json
+            git commit --no-edit
+          fi
+          git diff --check origin/main...HEAD
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --prefer-offline
+      - run: pnpm --filter @readest/readest-app setup-vendors
+      - name: Run focused Nearby BookDrop regressions
+        run: >-
+          pnpm --filter @readest/readest-app exec vitest run
+          src/__tests__/components/localsend/LocalSendManagerPresence.test.tsx
+          src/__tests__/components/localsend/ReceiveRequestPairing.test.tsx
+          src/__tests__/services/localsend/deviceModel.test.ts
+          src/__tests__/services/localsend/devicePrefs.test.ts
+          src/__tests__/services/localsend/pairedDevices.test.ts
+          src/__tests__/services/localsend/sounds.test.ts
+          src/__tests__/store/localsendStore.test.ts
+          src/__tests__/utils/nearby-pairing-plan-gate.test.ts
+          --maxWorkers=2
+      - name: Remove temporary workflows and push refreshed branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/temp-bookdrop-js-tests.yml .github/workflows/temp-refresh-bookdrop.yml
+          git add -u .github/workflows
+          if ! git diff --cached --quiet; then
+            git commit -m 'ci: clean temporary BookDrop validation workflows'
+          fi
+          git diff --check origin/main...HEAD
+          git push origin HEAD:integrate/upstream-nearby-bookdrop-v2-2026-09-04
