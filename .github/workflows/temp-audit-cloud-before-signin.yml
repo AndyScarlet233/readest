@@ -1,0 +1,40 @@
+name: Temporary audit cloud-before-signin conflicts
+
+on:
+  push:
+    branches:
+      - audit/upstream-cloud-before-signin-2026-09-04
+    paths:
+      - .github/workflows/temp-audit-cloud-before-signin.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Audit upstream #6045
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/readest/readest.git
+          commit='7dd67f89ee78adb0961f6afab90f6fa307d6bf5d'
+          git fetch --no-tags upstream "$commit"
+          if git cherry-pick "$commit"; then
+            echo 'UPSTREAM_6045_APPLIES_CLEANLY'
+          else
+            echo 'UPSTREAM_6045_CONFLICTS_BEGIN'
+            git diff --name-status --diff-filter=U
+            echo 'UPSTREAM_6045_CONFLICTS_END'
+            echo 'UPSTREAM_6045_ALL_CHANGES_BEGIN'
+            git status --short
+            echo 'UPSTREAM_6045_ALL_CHANGES_END'
+            git cherry-pick --abort
+          fi
