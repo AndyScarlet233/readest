@@ -18,7 +18,56 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Repair Apple notification fixture minimally
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts'
+          git show 2289a400fbf383d74a4f3bcf8fe5f90e41abd560:"$file" > "$file"
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts')
+          text = path.read_text()
+          old = """            select: () => ({
+              eq: () => ({
+                single: () => Promise.resolve({ data: state.paymentRow ?? null }),
+                in: () => Promise.resolve({ data: state.completedPayments ?? [] }),
+              }),
+            }),
+"""
+          new = """            select: (columns?: string) => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data:
+                      columns === 'user_id' && state.existingPaymentOwner !== undefined
+                        ? { user_id: state.existingPaymentOwner }
+                        : (state.paymentRow ?? null),
+                    error: null,
+                  }),
+                in: () => Promise.resolve({ data: state.completedPayments ?? [] }),
+              }),
+            }),
+"""
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one payments select fixture, found {count}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff --numstat 2289a400fbf383d74a4f3bcf8fe5f90e41abd560 -- "$file"
+          changed=$(git diff --numstat 2289a400fbf383d74a4f3bcf8fe5f90e41abd560 -- "$file" | awk '{print $1+$2}')
+          test -n "$changed"
+          test "$changed" -le 20
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
+          if ! git diff --cached --quiet; then
+            git commit -m "test(payment): minimally model Apple owner lookup"
+            git push origin HEAD:integrate/upstream-account-payment-v2-2026-09-04
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
