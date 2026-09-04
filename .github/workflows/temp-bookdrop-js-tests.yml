@@ -6,6 +6,14 @@ on:
       - integrate/upstream-nearby-bookdrop-v2-2026-09-04
     paths:
       - .github/workflows/temp-bookdrop-js-tests.yml
+      - apps/readest-app/src/__tests__/components/localsend/**
+      - apps/readest-app/src/__tests__/services/localsend/**
+      - apps/readest-app/src/__tests__/store/localsendStore.test.ts
+      - apps/readest-app/src/__tests__/utils/nearby-pairing-plan-gate.test.ts
+      - apps/readest-app/src/components/localsend/**
+      - apps/readest-app/src/services/localsend/**
+      - apps/readest-app/src/store/localsendStore.ts
+      - apps/readest-app/src/utils/access.ts
 
 permissions:
   contents: read
