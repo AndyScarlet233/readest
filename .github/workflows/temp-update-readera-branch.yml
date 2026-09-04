@@ -1,0 +1,79 @@
+name: Temporary refresh ReadEra integration
+
+on:
+  push:
+    branches:
+      - integrate/upstream-readera-2026-09-04
+    paths:
+      - .github/workflows/temp-update-readera-branch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Merge current main while preserving fork and ReadEra locale additions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+
+          if ! git merge --no-edit origin/main; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            unexpected="$(printf '%s\n' "$conflicts" | grep -vE '^apps/readest-app/public/locales/[^/]+/translation\.json$' || true)"
+            if [ -n "$unexpected" ]; then
+              echo 'Unexpected non-locale conflicts while refreshing ReadEra:'
+              printf '%s\n' "$unexpected"
+              exit 1
+            fi
+
+            for file in $conflicts; do
+              git checkout --theirs -- "$file"
+            done
+
+            python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          upstream_commit = '8b8fbe14d9051e0ec1632849b08b3e622b4cc823'
+          keys = [
+              'Select ReadEra Backup File',
+              'This is not a ReadEra backup file.',
+              'This book was not found in the ReadEra backup.',
+              'ReadEra',
+              'ReadEra backup file (.bak)',
+          ]
+          for path in Path('apps/readest-app/public/locales').glob('*/translation.json'):
+              rel = path.as_posix()
+              try:
+                  upstream = json.loads(subprocess.check_output(['git', 'show', f'{upstream_commit}:{rel}'], text=True))
+              except subprocess.CalledProcessError:
+                  continue
+              ours = json.loads(path.read_text())
+              changed = False
+              for key in keys:
+                  if key in upstream:
+                      ours[key] = upstream[key]
+                      changed = True
+              if changed:
+                  path.write_text(json.dumps(ours, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+            git add apps/readest-app/public/locales/*/translation.json
+            git commit --no-edit
+          fi
+
+          git diff --check origin/main...HEAD
+          git push origin HEAD:integrate/upstream-readera-2026-09-04
