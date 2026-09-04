@@ -1208,6 +1208,54 @@ export const transformStylesheet = (
     return match;
   });
 
+  // `@media (orientation: ...)` inside a section is evaluated against the
+  // iframe, and the paginator sizes that iframe to the whole multi-column strip
+  // rather than to a page: a one-page section reports portrait and a two-page
+  // section landscape. The strip width is itself derived from the content, so a
+  // rule that changes the content's height — `column-count: 2` in the IDPF
+  // media-query sample — flips the query, which flips the page count, which
+  // flips the query straight back, and the layout never settles (#6038).
+  // Resolve the feature against the reader's own viewport, the same thing the
+  // vw/vh rewrite below does and for the same reason, so the book gets the
+  // orientation the reader is actually in and the cycle cannot form.
+  // Width and height features are the same trap: a two-page section makes the
+  // strip twice as wide, so the sample's `(max-width: 480px)` block flips on the
+  // page count it is itself deciding. Both rewrites are confined to the prelude,
+  // between `@media` and the `{` that opens its block, so the same literal in a
+  // declaration value or an attribute selector is left as the book wrote it. The
+  // two sentinels below resolve to themselves, so the passes are order-free.
+  const isLandscape = vw > vh;
+  const always = '(min-width: 0px)';
+  const never = '(min-width: 999999px)';
+  // Park quoted values first, the same way the url() pass above does, so an
+  // at-rule quoted inside a declaration is never mistaken for a real prelude.
+  const quoted: string[] = [];
+  css = css.replace(/"[^"\n]*"|'[^'\n]*'/g, (value) => {
+    quoted.push(value);
+    return `READEST_STR_${quoted.length - 1}_PLACEHOLDER`;
+  });
+  css = css.replace(/@media[^{]*/gi, (prelude) =>
+    prelude
+      .replace(/\(\s*orientation\s*:\s*(landscape|portrait)\s*\)/gi, (_, mode: string) =>
+        (mode.toLowerCase() === 'landscape') === isLandscape ? always : never,
+      )
+      .replace(
+        /\(\s*(min|max)-(width|height)\s*:\s*([^)]+?)\s*\)/gi,
+        (feature, bound: string, axis: string, length: string) => {
+          // Only lengths that are already px can be resolved without guessing at
+          // the book's root font size; anything else keeps the authored feature.
+          const px = /^(\d*\.?\d+)(?:px)?$/.exec(length);
+          if (!px) return feature;
+          const viewport = axis.toLowerCase() === 'width' ? vw : vh;
+          const bounds = parseFloat(px[1]!);
+          return (bound.toLowerCase() === 'min' ? viewport >= bounds : viewport <= bounds)
+            ? always
+            : never;
+        },
+      ),
+  );
+  css = css.replace(/READEST_STR_(\d+)_PLACEHOLDER/g, (_, i) => quoted[+i]!);
+
   // replace absolute font sizes with rem units
   // replace vw and vh as they cause problems with layout
   // replace hardcoded colors
@@ -1283,6 +1331,49 @@ export const applyThemeModeClass = (document: Document, isDarkMode: boolean) => 
 export const applyScrollModeClass = (document: Document, isScrollMode: boolean) => {
   document.body.classList.remove('scroll-mode', 'paginated-mode');
   document.body.classList.add(isScrollMode ? 'scroll-mode' : 'paginated-mode');
+};
+
+// A prefixed attribute name, e.g. the `epub:type` of `epub:type="chapter"`.
+const PREFIXED_ATTR_REGEX = /^([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)$/;
+
+/**
+ * Re-attach the namespaces an XHTML section declared to its prefixed
+ * attributes.
+ *
+ * Sections reach the iframe through `srcdoc` so that browser extensions can
+ * see them, and `srcdoc` is always parsed as HTML. An HTML parser has no
+ * namespaces outside foreign content, so `epub:type="chapter"` lands in the
+ * null namespace under the literal name `epub:type` and every CSS namespace
+ * selector written against it matches nothing: the book's own
+ * `div[epub|type="chapter"]` (which paints the illustration and the page
+ * color of the IDPF media-query sample, #6038) as much as our
+ * `aside[epub|type~="footnote"]`. The original attribute stays in place, and
+ * the twin carries the same qualified name, so `getAttribute('epub:type')`
+ * callers are unaffected either way.
+ */
+export const applyNamespacedAttributes = (document: Document) => {
+  // `xmlns:` declarations survive HTML parsing as ordinary attributes, but only
+  // as attributes: nothing scopes them any more, so a prefix has to be resolved
+  // the way XML would resolve it, from the element's own ancestor chain. A flat
+  // document-order map would carry a nested rebinding past the end of its
+  // subtree and on to later siblings.
+  const lookupNamespace = (element: Element, prefix: string) => {
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const uri = node.getAttribute(`xmlns:${prefix}`);
+      if (uri) return uri;
+    }
+    return null;
+  };
+  for (const element of document.querySelectorAll('*')) {
+    for (const { name, value } of Array.from(element.attributes)) {
+      const [, prefix, localName] = PREFIXED_ATTR_REGEX.exec(name) ?? [];
+      if (!prefix) continue;
+      const uri = lookupNamespace(element, prefix);
+      if (uri && !element.hasAttributeNS(uri, localName!)) {
+        element.setAttributeNS(uri, name, value);
+      }
+    }
+  }
 };
 
 /**
