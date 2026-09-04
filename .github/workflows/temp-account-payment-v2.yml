@@ -1,0 +1,52 @@
+name: Temporary account/payment integration
+
+on:
+  push:
+    branches:
+      - integrate/upstream-account-payment-v2-2026-09-04
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Replay reviewed payment integration on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          commits=(
+            9e51f4df5e68e3077dce48f54ea49a43b254ec39
+            874df7063159d1bcfba482ee886cf3c6cf5e1616
+            7653c8b80467318eae0bce341e2f4175df66600d
+            36370c740572a7e781d39026e0aba631550ffd07
+            52c29897f24ecc526f530a87999ddeaacb6ec321
+            7a1c56af1fba3a320e71a98413bebc21dfaf9dc7
+          )
+          for commit in "${commits[@]}"; do
+            if ! git cherry-pick "$commit"; then
+              echo "::error::Cherry-pick stopped at $commit. Refusing automatic conflict resolution."
+              echo "Conflicted paths:"
+              git diff --name-only --diff-filter=U
+              git status --short
+              git cherry-pick --abort
+              exit 1
+            fi
+          done
+
+      - name: Remove temporary workflow and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/temp-account-payment-v2.yml
+          git commit -m "chore: remove temporary integration workflow"
+          git push origin HEAD:integrate/upstream-account-payment-v2-2026-09-04
