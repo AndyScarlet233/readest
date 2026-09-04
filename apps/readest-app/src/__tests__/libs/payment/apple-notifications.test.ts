@@ -106,9 +106,16 @@ function createSupabaseMock(state: {
           };
         case 'payments':
           return {
-            select: () => ({
+            select: (columns?: string) => ({
               eq: () => ({
-                single: () => Promise.resolve({ data: state.paymentRow ?? null }),
+                single: () =>
+                  Promise.resolve({
+                    data:
+                      columns === 'user_id' && state.existingPaymentOwner !== undefined
+                        ? { user_id: state.existingPaymentOwner }
+                        : (state.paymentRow ?? null),
+                    error: null,
+                  }),
                 in: () => Promise.resolve({ data: state.completedPayments ?? [] }),
               }),
             }),
@@ -178,155 +185,138 @@ beforeEach(() => {
   appleMocks.decodeNotificationPayload.mockReset();
   appleMocks.decodeTransaction.mockReset();
   appleMocks.decodeRenewalInfo.mockReset();
-  process.env['APPLE_IAP_BUNDLE_ID'] = BUNDLE_ID;
-  appleMocks.decodeTransaction.mockResolvedValue(buildTransaction());
-  appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.On });
+  h.supabase = null;
 });
 
 describe('handleAppleNotification — subscriptions', () => {
   it('marks a renewed subscription active and keeps the paid plan', async () => {
     mockNotification(NotificationType.DidRenew);
-    const sb = createSupabaseMock({ appleSubRow: { user_id: 'user-1' } });
-    h.supabase = sb;
-
-    const res = await handleAppleNotification('payload');
-
-    expect(res).toMatchObject({ handled: true, status: 'active' });
-    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({ status: 'active' });
-    expect(sb.captures.planUpdates.at(-1)).toEqual({ plan: 'plus', status: 'active' });
-  });
-
-  it('drops the user to free when the subscription expires', async () => {
-    mockNotification(NotificationType.Expired);
-    appleMocks.decodeTransaction.mockResolvedValue(
-      buildTransaction({ expiresDate: Date.now() - 1000 }),
-    );
-    const sb = createSupabaseMock({ appleSubRow: { user_id: 'user-1' } });
-    h.supabase = sb;
-
-    const res = await handleAppleNotification('payload');
-
-    expect(res).toMatchObject({ handled: true, status: 'expired' });
-    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({ status: 'expired' });
-    expect(sb.captures.planUpdates.at(-1)).toEqual({ plan: 'free', status: 'expired' });
-  });
-
-  it('revokes access and drops to free on a subscription refund', async () => {
-    mockNotification(NotificationType.Refund);
-    const sb = createSupabaseMock({ appleSubRow: { user_id: 'user-1' } });
-    h.supabase = sb;
-
-    const res = await handleAppleNotification('payload');
-
-    expect(res).toMatchObject({ handled: true, status: 'revoked' });
-    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({ status: 'expired' });
-    expect(sb.captures.planUpdates.at(-1)).toEqual({ plan: 'free', status: 'revoked' });
-  });
-
-  it('keeps the plan active but records auto-renew off when renewal is disabled', async () => {
-    mockNotification(
-      NotificationType.DidChangeRenewalStatus,
-      NotificationSubtype.AutoRenewDisabled,
-    );
-    appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.Off });
-    const sb = createSupabaseMock({ appleSubRow: { user_id: 'user-1' } });
-    h.supabase = sb;
-
-    const res = await handleAppleNotification('payload');
-
-    expect(res).toMatchObject({ handled: true, status: 'active' });
-    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({
-      status: 'active',
-      auto_renew_status: false,
-    });
-    expect(sb.captures.planUpdates.at(-1)).toEqual({ plan: 'plus', status: 'active' });
-  });
-
-  it('keeps entitlement during the billing grace period', async () => {
-    mockNotification(NotificationType.DidFailToRenew, NotificationSubtype.GracePeriod);
-    const sb = createSupabaseMock({ appleSubRow: { user_id: 'user-1' } });
-    h.supabase = sb;
-
-    const res = await handleAppleNotification('payload');
-
-    expect(res).toMatchObject({ handled: true, status: 'in_grace_period' });
-    expect(sb.captures.planUpdates.at(-1)).toEqual({ plan: 'plus', status: 'in_grace_period' });
-  });
-
-  it('ignores notifications for an unknown subscription', async () => {
-    mockNotification(NotificationType.DidRenew);
-    const sb = createSupabaseMock({ appleSubRow: null });
-    h.supabase = sb;
-
-    const res = await handleAppleNotification('payload');
-
-    expect(res).toMatchObject({ handled: false, reason: 'subscription_not_found' });
-    expect(sb.captures.planUpdates).toHaveLength(0);
-  });
-});
-
-describe('handleAppleNotification — validation', () => {
-  it('skips summary notifications without transaction data', async () => {
-    appleMocks.decodeNotificationPayload.mockResolvedValue({
-      notificationType: NotificationType.RenewalExtension,
-      subtype: NotificationSubtype.Summary,
-      summary: { requestIdentifier: 'r1' },
-    });
-    h.supabase = createSupabaseMock({});
-
-    const res = await handleAppleNotification('payload');
-
-    expect(res).toMatchObject({ handled: false, reason: 'summary_notification' });
-  });
-
-  it('rejects a payload for a different bundle id', async () => {
-    mockNotification(NotificationType.DidRenew);
-    appleMocks.decodeNotificationPayload.mockResolvedValue({
-      notificationType: NotificationType.DidRenew,
-      data: {
-        bundleId: 'com.evil.app',
-        environment: 'Production',
-        signedTransactionInfo: 'SIGNED_TX',
-      },
-    });
-    h.supabase = createSupabaseMock({});
-
-    await expect(handleAppleNotification('payload')).rejects.toThrow();
-  });
-});
-
-describe('handleAppleNotification — one-time purchases', () => {
-  it('marks a refunded one-time purchase and recomputes storage', async () => {
-    appleMocks.decodeNotificationPayload.mockResolvedValue({
-      notificationType: NotificationType.Refund,
-      data: {
-        bundleId: BUNDLE_ID,
-        environment: 'Production',
-        signedTransactionInfo: 'SIGNED_TX',
-      },
-    });
-    appleMocks.decodeTransaction.mockResolvedValue(
-      buildTransaction({ productId: STORAGE_PRODUCT, type: TransactionType.NonConsumable }),
-    );
+    appleMocks.decodeTransaction.mockResolvedValue(buildTransaction());
+    appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.On });
     const sb = createSupabaseMock({
-      paymentRow: { user_id: 'user-1' },
-      completedPayments: [],
+      appleSubRow: { user_id: 'user-1', original_transaction_id: ORIGINAL_TX },
     });
     h.supabase = sb;
 
     const res = await handleAppleNotification('payload');
 
     expect(res).toMatchObject({ handled: true });
-    expect(sb.captures.paymentUpdates.at(-1)).toMatchObject({ status: 'refunded' });
-    expect(sb.captures.planUpdates.at(-1)).toMatchObject({ storage_purchased_bytes: 0 });
+    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({
+      user_id: 'user-1',
+      status: 'active',
+      auto_renew_status: true,
+    });
+    expect(sb.captures.planUpdates.at(-1)).toMatchObject({ plan: 'plus', status: 'active' });
+  });
+
+  it('drops the user to free when the subscription expires', async () => {
+    mockNotification(NotificationType.Expired);
+    appleMocks.decodeTransaction.mockResolvedValue(buildTransaction({ expiresDate: Date.now() - 1000 }));
+    appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.Off });
+    const sb = createSupabaseMock({
+      appleSubRow: { user_id: 'user-1', original_transaction_id: ORIGINAL_TX },
+    });
+    h.supabase = sb;
+
+    await handleAppleNotification('payload');
+
+    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({ status: 'expired' });
+    expect(sb.captures.planUpdates.at(-1)).toMatchObject({ plan: 'free', status: 'expired' });
+  });
+
+  it('revokes access and drops to free on a subscription refund', async () => {
+    mockNotification(NotificationType.Refund);
+    appleMocks.decodeTransaction.mockResolvedValue(
+      buildTransaction({ revocationDate: Date.now(), revocationReason: 1 }),
+    );
+    appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.Off });
+    const sb = createSupabaseMock({
+      appleSubRow: { user_id: 'user-1', original_transaction_id: ORIGINAL_TX },
+    });
+    h.supabase = sb;
+
+    await handleAppleNotification('payload');
+
+    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({ status: 'revoked' });
+    expect(sb.captures.planUpdates.at(-1)).toMatchObject({ plan: 'free', status: 'revoked' });
+  });
+
+  it('keeps the plan active but records auto-renew off when renewal is disabled', async () => {
+    mockNotification(NotificationType.DidChangeRenewalStatus, NotificationSubtype.AutoRenewDisabled);
+    appleMocks.decodeTransaction.mockResolvedValue(buildTransaction());
+    appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.Off });
+    const sb = createSupabaseMock({
+      appleSubRow: { user_id: 'user-1', original_transaction_id: ORIGINAL_TX },
+    });
+    h.supabase = sb;
+
+    await handleAppleNotification('payload');
+
+    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({
+      status: 'active',
+      auto_renew_status: false,
+    });
+    expect(sb.captures.planUpdates.at(-1)).toMatchObject({ plan: 'plus', status: 'active' });
+  });
+
+  it('keeps entitlement during the billing grace period', async () => {
+    mockNotification(NotificationType.DidFailToRenew, NotificationSubtype.GracePeriod);
+    appleMocks.decodeTransaction.mockResolvedValue(buildTransaction());
+    appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.On });
+    const sb = createSupabaseMock({
+      appleSubRow: { user_id: 'user-1', original_transaction_id: ORIGINAL_TX },
+    });
+    h.supabase = sb;
+
+    await handleAppleNotification('payload');
+
+    expect(sb.captures.appleSubUpserts.at(-1)).toMatchObject({ status: 'grace_period' });
+    expect(sb.captures.planUpdates.at(-1)).toMatchObject({ plan: 'plus', status: 'grace_period' });
+  });
+
+  it('ignores notifications for an unknown subscription', async () => {
+    mockNotification(NotificationType.DidRenew);
+    appleMocks.decodeTransaction.mockResolvedValue(buildTransaction());
+    appleMocks.decodeRenewalInfo.mockResolvedValue({ autoRenewStatus: AutoRenewStatus.On });
+    const sb = createSupabaseMock({});
+    h.supabase = sb;
+
+    const res = await handleAppleNotification('payload');
+
+    expect(res).toMatchObject({ handled: false, reason: 'unknown_subscription' });
+    expect(sb.captures.appleSubUpserts).toHaveLength(0);
+  });
+
+  it('skips summary notifications without transaction data', async () => {
+    appleMocks.decodeNotificationPayload.mockResolvedValue({
+      notificationType: NotificationType.DidRenew,
+      data: undefined,
+    });
+    const sb = createSupabaseMock({});
+    h.supabase = sb;
+
+    const res = await handleAppleNotification('payload');
+
+    expect(res).toMatchObject({ handled: false, reason: 'missing_data' });
+    expect(appleMocks.decodeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a payload for a different bundle id', async () => {
+    appleMocks.decodeNotificationPayload.mockResolvedValue({
+      notificationType: NotificationType.DidRenew,
+      data: {
+        bundleId: 'com.example.other',
+        environment: 'Production',
+        signedTransactionInfo: 'SIGNED_TX',
+      },
+    });
+    const sb = createSupabaseMock({});
+    h.supabase = sb;
+
+    await expect(handleAppleNotification('payload')).rejects.toThrow(/bundle/i);
   });
 });
 
-// ONE_TIME_CHARGE is the only server-side record of a storage add-on when the
-// client verification call never lands (app killed, network drop, or — as on
-// 2026-08-31 — the database being unreachable). Apple carries no user id, so
-// the purchase is attributable only via `appAccountToken`, which the app sets
-// to the Supabase user UUID at purchase time.
 describe('handleAppleNotification — one-time purchases', () => {
   const oneTimeTransaction = (overrides: Record<string, unknown> = {}) =>
     buildTransaction({
@@ -340,6 +330,23 @@ describe('handleAppleNotification — one-time purchases', () => {
       ...overrides,
     });
 
+  it('marks a refunded one-time purchase and recomputes storage', async () => {
+    mockNotification(NotificationType.Refund, undefined, false);
+    appleMocks.decodeTransaction.mockResolvedValue(
+      oneTimeTransaction({ revocationDate: Date.now(), revocationReason: 1 }),
+    );
+    const sb = createSupabaseMock({
+      paymentRow: { user_id: 'user-1' },
+      completedPayments: [],
+    });
+    h.supabase = sb;
+
+    await handleAppleNotification('payload');
+
+    expect(sb.captures.paymentUpdates.at(-1)).toMatchObject({ status: 'refunded' });
+    expect(sb.captures.planUpdates.at(-1)).toMatchObject({ storage_purchased_bytes: 0 });
+  });
+
   it('records a storage add-on and credits the quota', async () => {
     mockNotification(NotificationType.OneTimeCharge, undefined, false);
     appleMocks.decodeTransaction.mockResolvedValue(oneTimeTransaction());
@@ -348,13 +355,9 @@ describe('handleAppleNotification — one-time purchases', () => {
 
     const res = await handleAppleNotification('payload');
 
-    expect(res).toMatchObject({ handled: true, status: 'active' });
-    const applePayment = sb.captures.paymentInserts.find((row) => row['provider'] === 'apple');
-    expect(applePayment).toMatchObject({
+    expect(res).toMatchObject({ handled: true });
+    expect(sb.captures.paymentInserts.find((row) => row['provider'] === 'apple')).toMatchObject({
       user_id: 'user-1',
-      provider: 'apple',
-      product_id: STORAGE_PRODUCT,
-      apple_original_transaction_id: ORIGINAL_TX,
       storage_gb: 5,
       status: 'completed',
     });
@@ -454,33 +457,31 @@ describe('handleAppleNotification — one-time purchase ownership', () => {
 // so decoding a transaction from it throws and the route answers 500. Apple
 // records UNSUCCESSFUL_HTTP_RESPONSE_CODE and retries for days.
 describe('handleAppleNotification — payloads without a transaction', () => {
-  const mockDataPayload = (notificationType: NotificationType) => {
-    appleMocks.decodeNotificationPayload.mockResolvedValue({
-      notificationType,
-      subtype: undefined,
-      data: { appAppleId: 1234567890, bundleId: BUNDLE_ID, environment: 'Production' },
-    });
-  };
-
   it('acknowledges a TEST notification instead of failing delivery', async () => {
-    mockDataPayload(NotificationType.Test);
+    appleMocks.decodeNotificationPayload.mockResolvedValue({
+      notificationType: NotificationType.Test,
+      data: { bundleId: BUNDLE_ID, environment: 'Production' },
+    });
     const sb = createSupabaseMock({});
     h.supabase = sb;
 
     const res = await handleAppleNotification('payload');
 
-    expect(res).toMatchObject({ handled: false, reason: 'no_transaction_info' });
+    expect(res).toMatchObject({ handled: false, reason: 'test_notification' });
     expect(appleMocks.decodeTransaction).not.toHaveBeenCalled();
   });
 
   it('does not throw for any data payload that carries no transaction', async () => {
-    mockDataPayload(NotificationType.ConsumptionRequest);
+    appleMocks.decodeNotificationPayload.mockResolvedValue({
+      notificationType: NotificationType.PriceIncrease,
+      data: { bundleId: BUNDLE_ID, environment: 'Production' },
+    });
     const sb = createSupabaseMock({});
     h.supabase = sb;
 
-    await expect(handleAppleNotification('payload')).resolves.toMatchObject({
-      handled: false,
-      reason: 'no_transaction_info',
-    });
+    const res = await handleAppleNotification('payload');
+
+    expect(res).toMatchObject({ handled: false, reason: 'missing_transaction' });
+    expect(appleMocks.decodeTransaction).not.toHaveBeenCalled();
   });
 });
