@@ -54,6 +54,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('DevicePickerDialog send lifecycle', () => {
+  // An in-flight transfer owns its cancel affordance independently of listener liveness.
   it('keeps Cancel available if the service reports stopped mid-send', async () => {
     render(<DevicePickerDialog files={files} onClose={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
