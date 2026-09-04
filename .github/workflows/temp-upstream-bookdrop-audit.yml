@@ -1,0 +1,42 @@
+name: Temporary upstream BookDrop audit
+
+on:
+  push:
+    branches:
+      - integrate/upstream-nearby-bookdrop-2026-09-04
+    paths:
+      - .github/workflows/temp-upstream-bookdrop-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Audit upstream Nearby BookDrop v2 conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_commit='5a3ab1b47a8ae0ddfb31b0abaec8f38ef2191ce6'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/readest/readest.git
+          git fetch --no-tags upstream "$upstream_commit"
+          if git cherry-pick "$upstream_commit"; then
+            echo 'Nearby BookDrop v2 applies cleanly.'
+            exit 0
+          fi
+          echo 'Conflict files:'
+          git diff --name-status --diff-filter=U
+          echo '--- conflict summary ---'
+          git status --short
+          git cherry-pick --abort
+          exit 1
