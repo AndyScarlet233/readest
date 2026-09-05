@@ -89,6 +89,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          snapshot_source() {
+            rm -rf /tmp/readest-nix-src
+            mkdir -p /tmp/readest-nix-src
+            rsync -a \
+              --exclude='.git' \
+              --exclude='node_modules' \
+              --exclude='.next' \
+              --exclude='target' \
+              ./ /tmp/readest-nix-src/
+          }
+
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -107,9 +119,10 @@ jobs:
           git add pnpm-lock.yaml nix/package.nix
           git diff --cached --check
           git commit -m "ci: derive fork Nix dependency hashes"
+          snapshot_source
 
           set +e
-          nix build -L --no-link .#default.pnpmDeps 2>&1 | tee /tmp/pnpm-nix.log
+          nix build -L --no-link "path:/tmp/readest-nix-src#default.pnpmDeps" 2>&1 | tee /tmp/pnpm-nix.log
           pnpm_rc=${PIPESTATUS[0]}
           set -e
           if [ "$pnpm_rc" -eq 0 ]; then
@@ -138,9 +151,10 @@ jobs:
           PY
           git add nix/package.nix
           git commit --amend --no-edit
+          snapshot_source
 
           set +e
-          nix build -L --no-link .#default.cargoDeps 2>&1 | tee /tmp/cargo-nix.log
+          nix build -L --no-link "path:/tmp/readest-nix-src#default.cargoDeps" 2>&1 | tee /tmp/cargo-nix.log
           cargo_rc=${PIPESTATUS[0]}
           set -e
           if [ "$cargo_rc" -eq 0 ]; then
@@ -169,8 +183,12 @@ jobs:
           PY
           git add nix/package.nix
           git commit --amend -m "chore(upstream): reconcile fork dependency locks for #6065"
+          snapshot_source
 
-          nix build -L --no-link .#default.pnpmDeps .#default.tursoPluginDeps .#default.cargoDeps
+          nix build -L --no-link \
+            "path:/tmp/readest-nix-src#default.pnpmDeps" \
+            "path:/tmp/readest-nix-src#default.tursoPluginDeps" \
+            "path:/tmp/readest-nix-src#default.cargoDeps"
 
       - name: Remove probe and push completed replay
         run: |
