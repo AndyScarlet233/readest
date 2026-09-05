@@ -1,0 +1,60 @@
+name: Temporary upstream sync
+
+on:
+  push:
+    branches:
+      - integrate/upstream-sync-2026-09-05
+
+permissions:
+  contents: write
+
+jobs:
+  merge-upstream:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out integration branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch official upstream
+        run: |
+          git remote add official-upstream https://github.com/readest/readest.git || true
+          git fetch --no-tags official-upstream main
+          echo "UPSTREAM_SHA=$(git rev-parse official-upstream/main)" >> "$GITHUB_ENV"
+
+      - name: Merge official upstream with conflict stop
+        id: merge
+        shell: bash
+        run: |
+          set +e
+          git merge --no-ff --no-edit official-upstream/main
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            printf 'status=conflict\nupstream=%s\nconflicts:\n%s\n' "$UPSTREAM_SHA" "$conflicts" > .github/upstream-sync-status.txt
+            git merge --abort
+            git add .github/upstream-sync-status.txt
+            git commit -m "ci: record upstream merge conflicts"
+            git push origin HEAD:${GITHUB_REF_NAME}
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      - name: Finalize successful merge probe
+        if: steps.merge.outputs.merged == 'true'
+        run: |
+          printf 'status=merged\nupstream=%s\n' "$UPSTREAM_SHA" > .github/upstream-sync-status.txt
+          git add .github/upstream-sync-status.txt
+          git rm .github/workflows/temp-upstream-sync.yml
+          git commit -m "chore(upstream): record synced upstream head"
+          git push origin HEAD:${GITHUB_REF_NAME}
