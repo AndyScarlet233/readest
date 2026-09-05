@@ -29,25 +29,120 @@ jobs:
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
 
-      - name: Replay only pending upstream commits with conflict stop
+      - name: Replay TTS translations with semantic locale merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=42dcf2f70fc757d68fa2822a8427fe928df4c2df
+          rm -f .github/upstream-cherry-pick-status.txt
+          set +e
+          git cherry-pick "$sha"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+
+          conflicts="$(git diff --name-only --diff-filter=U)"
+          if [ -z "$conflicts" ]; then
+            echo "Cherry-pick failed without unmerged paths" >&2
+            exit 1
+          fi
+          while IFS= read -r path; do
+            case "$path" in
+              apps/readest-app/public/locales/*/translation.json) ;;
+              *)
+                echo "Unexpected non-locale conflict: $path" >&2
+                git cherry-pick --abort
+                exit 1
+                ;;
+            esac
+          done <<< "$conflicts"
+
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+
+          commit = "42dcf2f70fc757d68fa2822a8427fe928df4c2df"
+          expected = {
+              "Speech",
+              "Skip Parenthetical Readings",
+              "Do not speak kana or Han readings shown after Han text",
+          }
+          paths = subprocess.check_output(
+              ["git", "diff", "--name-only", "--diff-filter=U"], text=True
+          ).splitlines()
+
+          def show(spec: str) -> str:
+              return subprocess.check_output(["git", "show", spec], text=True)
+
+          missing = object()
+          for path in paths:
+              ours_text = show(f":2:{path}")
+              ours = json.loads(ours_text)
+              base = json.loads(show(f"{commit}^:{path}"))
+              theirs = json.loads(show(f"{commit}:{path}"))
+              changed = {
+                  key
+                  for key in set(base) | set(theirs)
+                  if base.get(key, missing) != theirs.get(key, missing)
+              }
+              if changed != expected:
+                  raise SystemExit(
+                      f"Unexpected translation delta in {path}: {sorted(changed)}"
+                  )
+
+              additions = []
+              for key in sorted(changed, key=lambda k: list(theirs).index(k)):
+                  if key not in theirs:
+                      raise SystemExit(f"Unexpected key deletion in {path}: {key}")
+                  if key in ours:
+                      base_value = base.get(key, missing)
+                      if ours[key] != theirs[key] and ours[key] != base_value:
+                          raise SystemExit(
+                              f"Fork/upstream translation overlap in {path}: {key}"
+                          )
+                      continue
+                  additions.append((key, theirs[key]))
+
+              if not additions:
+                  pathlib.Path(path).write_text(ours_text, encoding="utf-8")
+                  continue
+
+              close = ours_text.rfind("}")
+              if close < 0:
+                  raise SystemExit(f"Invalid JSON object text in {path}")
+              prefix = ours_text[:close].rstrip()
+              suffix = ours_text[close:]
+              if not prefix.endswith("{"):
+                  prefix += ","
+              lines = [
+                  f"  {json.dumps(key, ensure_ascii=False)}: {json.dumps(value, ensure_ascii=False)}"
+                  for key, value in additions
+              ]
+              merged = prefix + "\n" + ",\n".join(lines) + "\n" + suffix
+              json.loads(merged)
+              pathlib.Path(path).write_text(merged, encoding="utf-8")
+          PY
+
+          while IFS= read -r path; do
+            git add "$path"
+          done <<< "$conflicts"
+          git cherry-pick --continue
+
+      - name: Replay remaining upstream commits with conflict stop
         id: replay
         shell: bash
         run: |
           set -euo pipefail
           commits=(
-            070c90b8a999dc758d8be7b777b645abb03351bd
-            90dff452b05c7b7b848a41cc7c1a455a0997add7
-            bfab7dfa6916a8fae93fe2eedcff22a15f6fe3c4
-            f5ec1e5f31f5c6f1561e94caf6e84ee9951ad71c
-            c0bc2ef70a9544ca7ddacddd0ee79a7a695911a3
-            42dcf2f70fc757d68fa2822a8427fe928df4c2df
             cef42c9078ed2e1b5eafc608f65d12ff662d5e77
             1b266e72783505b567a20732bb920115c67cb105
             19989d272d9316ac1e1d22767116280b22de017b
             21cabdbc8fade5216bbc8dd2fd286df2dd842aab
             c29a5f9868a00bb4dc945cdf2bd7cc245e74011f
           )
-          rm -f .github/upstream-cherry-pick-status.txt
           for sha in "${commits[@]}"; do
             echo "Replaying $sha"
             set +e
