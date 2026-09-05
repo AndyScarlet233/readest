@@ -149,3 +149,11 @@ Index only — one line per memory. Detail lives in the topic files; do not rest
 - [stat_pages slow query + disk growth](stat-pages-slow-query-disk-growth.md) #5835+#5844 DEPLOYED; cron FLIPPED 3719ec648
 - [No prod metrics in public issues/PRs](feedback-no-prod-metrics-in-public.md) #5834 DELETED for exposing prod data
 - [KOReader emulator headless verify](koreader-emulator-headless-verify.md) HttpInspector recipe; never mv the stats DB
+
+## Upstream replay notes
+- [Tauri 2.11.5 fork bump](tauri-fork-bump-workspace-exclude-swift-rs.md) workspace exclude + swift-rs relabel; tao 0.37 carries prior iOS scene fixes
+- [#6071 fixed-layout/PDF TTS relocation](fixed-layout-missing-primaryindex-tts-6071.md)
+- [#5011 read aloud selection](read-aloud-selection-onetime-5011.md)
+- [#5790/#5930/#5943 PDF highlight blend mode](overlayer-blend-mode-follows-page-not-theme-5790.md)
+- [#6036 annotation popup fixed-wrapper offset](annotation-popup-fixed-wrapper-offset-6036.md)
+- [#5694 reflowable zoom shortcuts](zoom-shortcuts-reflowable-font-size-5694.md)
