@@ -18,6 +18,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Configure Git identity
         run: |
@@ -60,13 +61,9 @@ jobs:
             exit 1
           fi
 
-          # These two upstream maintenance workflows are intentionally absent in the fork.
           git rm -- .github/workflows/nightly.yml .github/workflows/nix-update-inputs.yml
-          # The fork release workflow is a separate frozen-main Windows/Android pipeline;
-          # upstream's zigbuild install line has no corresponding command here.
           git checkout --ours -- .github/workflows/release.yml
           git add .github/workflows/release.yml
-          # Keep fork-specific dependency hashes temporarily; both are recomputed below.
           git checkout --ours -- nix/package.nix pnpm-lock.yaml
           git add nix/package.nix pnpm-lock.yaml
 
