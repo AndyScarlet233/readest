@@ -55,8 +55,9 @@ jobs:
             exit 1
           fi
 
-          git checkout --ours -- "$keep_a" "$keep_b"
-          git add "$keep_a" "$keep_b"
+          git checkout --ours -- "$keep_a"
+          git add "$keep_a"
+          git rm -- "$keep_b"
           git cherry-pick --continue
 
       - name: Replay dependency security update with conflict stop
