@@ -1,5 +1,8 @@
 status=conflict
-commit=21cabdbc8fade5216bbc8dd2fd286df2dd842aab
+commit=c29a5f9868a00bb4dc945cdf2bd7cc245e74011f
 conflicts:
-apps/readest-app/.claude/memory/MEMORY.md
-apps/readest-app/.claude/memory/kosync-percentage-reanchor-impossible-path-5980.md
+.github/workflows/nightly.yml
+.github/workflows/nix-update-inputs.yml
+.github/workflows/release.yml
+nix/package.nix
+pnpm-lock.yaml
