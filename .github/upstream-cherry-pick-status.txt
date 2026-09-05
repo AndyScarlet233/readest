@@ -1,8 +1,0 @@
-status=conflict
-commit=c29a5f9868a00bb4dc945cdf2bd7cc245e74011f
-conflicts:
-.github/workflows/nightly.yml
-.github/workflows/nix-update-inputs.yml
-.github/workflows/release.yml
-nix/package.nix
-pnpm-lock.yaml
