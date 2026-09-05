@@ -9,13 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  replay-upstream:
+  finish-upstream-replay:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Check out integration branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -28,14 +28,13 @@ jobs:
         run: |
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
+          test "$(git rev-parse official-upstream/main)" = "c29a5f9868a00bb4dc945cdf2bd7cc245e74011f"
 
-      - name: Replay upstream agent-memory update without overwriting fork memory
+      - name: Replay #6065 while preserving fork-only workflows
         shell: bash
         run: |
           set -euo pipefail
-          sha=21cabdbc8fade5216bbc8dd2fd286df2dd842aab
-          keep_a=apps/readest-app/.claude/memory/MEMORY.md
-          keep_b=apps/readest-app/.claude/memory/kosync-percentage-reanchor-impossible-path-5980.md
+          sha=c29a5f9868a00bb4dc945cdf2bd7cc245e74011f
           rm -f .github/upstream-cherry-pick-status.txt
 
           set +e
@@ -43,48 +42,136 @@ jobs:
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then
-            exit 0
+            echo "Expected known fork conflicts while replaying #6065" >&2
+            exit 1
           fi
 
           conflicts="$(git diff --name-only --diff-filter=U | sort)"
-          expected="$(printf '%s\n%s\n' "$keep_a" "$keep_b" | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/nightly.yml' \
+            '.github/workflows/nix-update-inputs.yml' \
+            '.github/workflows/release.yml' \
+            'nix/package.nix' \
+            'pnpm-lock.yaml' | sort)"
           if [ "$conflicts" != "$expected" ]; then
-            echo "Unexpected conflicts while replaying #6064:" >&2
+            echo "Unexpected #6065 conflict set:" >&2
             printf '%s\n' "$conflicts" >&2
             git cherry-pick --abort
             exit 1
           fi
 
-          git checkout --ours -- "$keep_a"
-          git add "$keep_a"
-          git rm -- "$keep_b"
+          # These two upstream maintenance workflows are intentionally absent in the fork.
+          git rm -- .github/workflows/nightly.yml .github/workflows/nix-update-inputs.yml
+          # The fork release workflow is a separate frozen-main Windows/Android pipeline;
+          # upstream's zigbuild install line has no corresponding command here.
+          git checkout --ours -- .github/workflows/release.yml
+          git add .github/workflows/release.yml
+          # Keep fork-specific dependency hashes temporarily; both are recomputed below.
+          git checkout --ours -- nix/package.nix pnpm-lock.yaml
+          git add nix/package.nix pnpm-lock.yaml
+
+          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+            echo "Unresolved #6065 paths remain" >&2
+            git cherry-pick --abort
+            exit 1
+          fi
           git cherry-pick --continue
 
-      - name: Replay dependency security update with conflict stop
-        id: replay
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: Regenerate fork pnpm lockfile
+        run: |
+          pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+          pnpm install --frozen-lockfile --ignore-scripts --prefer-offline
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24
+
+      - name: Recompute fork Nix dependency hashes
         shell: bash
         run: |
           set -euo pipefail
-          sha=c29a5f9868a00bb4dc945cdf2bd7cc245e74011f
-          set +e
-          git cherry-pick "$sha"
-          status=$?
-          set -e
-          if [ "$status" -ne 0 ]; then
-            conflicts="$(git diff --name-only --diff-filter=U)"
-            git cherry-pick --abort
-            printf 'status=conflict\ncommit=%s\nconflicts:\n%s\n' "$sha" "$conflicts" > .github/upstream-cherry-pick-status.txt
-            git add .github/upstream-cherry-pick-status.txt
-            git commit -m "ci: record upstream cherry-pick conflict"
-            git push origin HEAD:${GITHUB_REF_NAME}
-            echo "complete=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "complete=true" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('nix/package.nix')
+          text = p.read_text()
+          text, n1 = re.subn(
+              r'(pnpmDeps = fetchPnpmDeps \{.*?\n\s*)hash = "sha256-[^"]+";',
+              r'\1hash = lib.fakeHash;', text, count=1, flags=re.S,
+          )
+          text, n2 = re.subn(r'cargoHash = "sha256-[^"]+";', 'cargoHash = lib.fakeHash;', text, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'Failed to install fake hashes: pnpm={n1}, cargo={n2}')
+          p.write_text(text)
+          PY
 
-      - name: Finalize successful replay
-        if: steps.replay.outputs.complete == 'true'
+          set +e
+          nix build -L --no-link .#default.pnpmDeps 2>&1 | tee /tmp/pnpm-nix.log
+          pnpm_rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$pnpm_rc" -eq 0 ]; then
+            echo "pnpmDeps unexpectedly accepted lib.fakeHash" >&2
+            exit 1
+          fi
+          pnpm_hash="$(python3 - <<'PY'
+          import re
+          text = open('/tmp/pnpm-nix.log').read()
+          hits = re.findall(r'got:\s+(sha256-[A-Za-z0-9+/=]+)', text)
+          if not hits:
+              raise SystemExit('No pnpm got: hash found')
+          print(hits[-1])
+          PY
+          )"
+          echo "Resolved pnpmDeps hash: $pnpm_hash"
+          PNPM_HASH="$pnpm_hash" python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p = Path('nix/package.nix')
+          text = p.read_text()
+          old = 'hash = lib.fakeHash;'
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected one fake pnpm hash, found {text.count(old)}')
+          p.write_text(text.replace(old, f'hash = "{os.environ["PNPM_HASH"]}";', 1))
+          PY
+
+          set +e
+          nix build -L --no-link .#default.cargoDeps 2>&1 | tee /tmp/cargo-nix.log
+          cargo_rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$cargo_rc" -eq 0 ]; then
+            echo "cargoDeps unexpectedly accepted lib.fakeHash" >&2
+            exit 1
+          fi
+          cargo_hash="$(python3 - <<'PY'
+          import re
+          text = open('/tmp/cargo-nix.log').read()
+          hits = re.findall(r'got:\s+(sha256-[A-Za-z0-9+/=]+)', text)
+          if not hits:
+              raise SystemExit('No cargo got: hash found')
+          print(hits[-1])
+          PY
+          )"
+          echo "Resolved cargoDeps hash: $cargo_hash"
+          CARGO_HASH="$cargo_hash" python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p = Path('nix/package.nix')
+          text = p.read_text()
+          old = 'cargoHash = lib.fakeHash;'
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected one fake cargo hash, found {text.count(old)}')
+          p.write_text(text.replace(old, f'cargoHash = "{os.environ["CARGO_HASH"]}";', 1))
+          PY
+
+          nix build -L --no-link .#default.pnpmDeps .#default.tursoPluginDeps .#default.cargoDeps
+
+      - name: Commit reconciled lockfiles and remove probe
         run: |
+          git add pnpm-lock.yaml nix/package.nix
+          git diff --cached --check
+          git commit -m "chore(upstream): reconcile fork dependency locks for #6065"
           git rm --ignore-unmatch .github/upstream-cherry-pick-status.txt
           git rm .github/workflows/temp-upstream-cherry-pick.yml
           git commit -m "chore(upstream): complete replay through #6065"
