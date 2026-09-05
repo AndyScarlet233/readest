@@ -103,4 +103,4 @@ jobs:
           test "$(git rev-parse official-upstream/main)" = "$upstream_sha"
           git rm .github/workflows/temp-upstream-6066-validation.yml
           git commit -m "chore(upstream): complete replay through #6066"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          HUSKY=0 git push origin HEAD:${GITHUB_REF_NAME}
