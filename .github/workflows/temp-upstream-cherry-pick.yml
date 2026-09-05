@@ -104,6 +104,10 @@ jobs:
           p.write_text(text)
           PY
 
+          git add pnpm-lock.yaml nix/package.nix
+          git diff --cached --check
+          git commit -m "ci: derive fork Nix dependency hashes"
+
           set +e
           nix build -L --no-link .#default.pnpmDeps 2>&1 | tee /tmp/pnpm-nix.log
           pnpm_rc=${PIPESTATUS[0]}
@@ -132,6 +136,8 @@ jobs:
               raise SystemExit(f'Expected one fake pnpm hash, found {text.count(old)}')
           p.write_text(text.replace(old, f'hash = "{os.environ["PNPM_HASH"]}";', 1))
           PY
+          git add nix/package.nix
+          git commit --amend --no-edit
 
           set +e
           nix build -L --no-link .#default.cargoDeps 2>&1 | tee /tmp/cargo-nix.log
@@ -161,14 +167,14 @@ jobs:
               raise SystemExit(f'Expected one fake cargo hash, found {text.count(old)}')
           p.write_text(text.replace(old, f'cargoHash = "{os.environ["CARGO_HASH"]}";', 1))
           PY
+          git add nix/package.nix
+          git commit --amend -m "chore(upstream): reconcile fork dependency locks for #6065"
 
           nix build -L --no-link .#default.pnpmDeps .#default.tursoPluginDeps .#default.cargoDeps
 
-      - name: Commit reconciled lockfiles and remove probe
+      - name: Remove probe and push completed replay
         run: |
-          git add pnpm-lock.yaml nix/package.nix
-          git diff --cached --check
-          git commit -m "chore(upstream): reconcile fork dependency locks for #6065"
+          git status --short
           git rm --ignore-unmatch .github/upstream-cherry-pick-status.txt
           git rm .github/workflows/temp-upstream-cherry-pick.yml
           git commit -m "chore(upstream): complete replay through #6065"
