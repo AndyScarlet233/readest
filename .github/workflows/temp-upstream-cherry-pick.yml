@@ -1,0 +1,77 @@
+name: Temporary upstream cherry-pick
+
+on:
+  push:
+    branches:
+      - integrate/upstream-6052-6065-2026-09-05
+
+permissions:
+  contents: write
+
+jobs:
+  replay-upstream:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out integration branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch official upstream
+        run: |
+          git remote add official-upstream https://github.com/readest/readest.git || true
+          git fetch --no-tags official-upstream main
+
+      - name: Replay only pending upstream commits with conflict stop
+        id: replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          commits=(
+            070c90b8a999dc758d8be7b777b645abb03351bd
+            90dff452b05c7b7b848a41cc7c1a455a0997add7
+            bfab7dfa6916a8fae93fe2eedcff22a15f6fe3c4
+            f5ec1e5f31f5c6f1561e94caf6e84ee9951ad71c
+            c0bc2ef70a9544ca7ddacddd0ee79a7a695911a3
+            42dcf2f70fc757d68fa2822a8427fe928df4c2df
+            cef42c9078ed2e1b5eafc608f65d12ff662d5e77
+            1b266e72783505b567a20732bb920115c67cb105
+            19989d272d9316ac1e1d22767116280b22de017b
+            21cabdbc8fade5216bbc8dd2fd286df2dd842aab
+            c29a5f9868a00bb4dc945cdf2bd7cc245e74011f
+          )
+          rm -f .github/upstream-cherry-pick-status.txt
+          for sha in "${commits[@]}"; do
+            echo "Replaying $sha"
+            set +e
+            git cherry-pick "$sha"
+            status=$?
+            set -e
+            if [ "$status" -ne 0 ]; then
+              conflicts="$(git diff --name-only --diff-filter=U)"
+              git cherry-pick --abort
+              printf 'status=conflict\ncommit=%s\nconflicts:\n%s\n' "$sha" "$conflicts" > .github/upstream-cherry-pick-status.txt
+              git add .github/upstream-cherry-pick-status.txt
+              git commit -m "ci: record upstream cherry-pick conflict"
+              git push origin HEAD:${GITHUB_REF_NAME}
+              echo "complete=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "complete=true" >> "$GITHUB_OUTPUT"
+
+      - name: Finalize successful replay
+        if: steps.replay.outputs.complete == 'true'
+        run: |
+          printf 'status=complete\ntarget=c29a5f9868a00bb4dc945cdf2bd7cc245e74011f\n' > .github/upstream-cherry-pick-status.txt
+          git add .github/upstream-cherry-pick-status.txt
+          git rm .github/workflows/temp-upstream-cherry-pick.yml
+          git commit -m "chore(upstream): record replayed upstream head"
+          git push origin HEAD:${GITHUB_REF_NAME}
