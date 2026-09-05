@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "இது ReadEra காப்புப்பிரதி கோப்பு அல்ல.",
   "This book was not found in the ReadEra backup.": "இந்தப் புத்தகம் ReadEra காப்புப்பிரதியில் காணப்படவில்லை.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra காப்புப்பிரதி கோப்பு (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra காப்புப்பிரதி கோப்பு (.bak)",
+  "Speech": "பேச்சு",
+  "Skip Parenthetical Readings": "அடைப்புக்குறி வாசிப்புகளைத் தவிர்",
+  "Do not speak kana or Han readings shown after Han text": "ஹான் உரைக்குப் பின் காட்டப்படும் கனா அல்லது ஹான் வாசிப்புகளைப் பேச வேண்டாம்"
 }

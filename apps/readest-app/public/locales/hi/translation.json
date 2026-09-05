@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "यह ReadEra बैकअप फ़ाइल नहीं है।",
   "This book was not found in the ReadEra backup.": "यह पुस्तक ReadEra बैकअप में नहीं मिली।",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra बैकअप फ़ाइल (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra बैकअप फ़ाइल (.bak)",
+  "Speech": "वाक्",
+  "Skip Parenthetical Readings": "कोष्ठक में दिए उच्चारण छोड़ें",
+  "Do not speak kana or Han readings shown after Han text": "हान पाठ के बाद दिखाए गए काना या हान उच्चारण न बोलें"
 }
