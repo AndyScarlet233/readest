@@ -29,12 +29,19 @@ jobs:
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
 
-      - name: Replay TTS translations with semantic locale merge
+      - name: Replay PDF annotator fix and restore missing upstream test
         shell: bash
         run: |
           set -euo pipefail
-          sha=42dcf2f70fc757d68fa2822a8427fe928df4c2df
+          sha=19989d272d9316ac1e1d22767116280b22de017b
+          test_path=apps/readest-app/src/__tests__/components/annotator/AnnotatorLookupSurfaces.test.tsx
           rm -f .github/upstream-cherry-pick-status.txt
+
+          if git cat-file -e "HEAD:${test_path}" 2>/dev/null; then
+            echo "Expected fork branch to have no pre-existing ${test_path}; refusing automatic resolution" >&2
+            exit 1
+          fi
+
           set +e
           git cherry-pick "$sha"
           status=$?
@@ -44,102 +51,28 @@ jobs:
           fi
 
           conflicts="$(git diff --name-only --diff-filter=U)"
-          if [ -z "$conflicts" ]; then
-            echo "Cherry-pick failed without unmerged paths" >&2
+          if [ "$conflicts" != "$test_path" ]; then
+            echo "Unexpected conflicts while replaying #6063:" >&2
+            printf '%s\n' "$conflicts" >&2
+            git cherry-pick --abort
             exit 1
           fi
-          while IFS= read -r path; do
-            case "$path" in
-              apps/readest-app/public/locales/*/translation.json) ;;
-              *)
-                echo "Unexpected non-locale conflict: $path" >&2
-                git cherry-pick --abort
-                exit 1
-                ;;
-            esac
-          done <<< "$conflicts"
 
-          python3 - <<'PY'
-          import json
-          import pathlib
-          import subprocess
-
-          commit = "42dcf2f70fc757d68fa2822a8427fe928df4c2df"
-          expected = {
-              "Speech",
-              "Skip Parenthetical Readings",
-              "Do not speak kana or Han readings shown after Han text",
-          }
-          paths = subprocess.check_output(
-              ["git", "diff", "--name-only", "--diff-filter=U"], text=True
-          ).splitlines()
-
-          def show(spec: str) -> str:
-              return subprocess.check_output(["git", "show", spec], text=True)
-
-          missing = object()
-          for path in paths:
-              ours_text = show(f":2:{path}")
-              ours = json.loads(ours_text)
-              base = json.loads(show(f"{commit}^:{path}"))
-              theirs = json.loads(show(f"{commit}:{path}"))
-              changed = {
-                  key
-                  for key in set(base) | set(theirs)
-                  if base.get(key, missing) != theirs.get(key, missing)
-              }
-              if changed != expected:
-                  raise SystemExit(
-                      f"Unexpected translation delta in {path}: {sorted(changed)}"
-                  )
-
-              additions = []
-              for key in sorted(changed, key=lambda k: list(theirs).index(k)):
-                  if key not in theirs:
-                      raise SystemExit(f"Unexpected key deletion in {path}: {key}")
-                  if key in ours:
-                      base_value = base.get(key, missing)
-                      if ours[key] != theirs[key] and ours[key] != base_value:
-                          raise SystemExit(
-                              f"Fork/upstream translation overlap in {path}: {key}"
-                          )
-                      continue
-                  additions.append((key, theirs[key]))
-
-              if not additions:
-                  pathlib.Path(path).write_text(ours_text, encoding="utf-8")
-                  continue
-
-              close = ours_text.rfind("}")
-              if close < 0:
-                  raise SystemExit(f"Invalid JSON object text in {path}")
-              prefix = ours_text[:close].rstrip()
-              suffix = ours_text[close:]
-              if not prefix.endswith("{"):
-                  prefix += ","
-              lines = [
-                  f"  {json.dumps(key, ensure_ascii=False)}: {json.dumps(value, ensure_ascii=False)}"
-                  for key, value in additions
-              ]
-              merged = prefix + "\n" + ",\n".join(lines) + "\n" + suffix
-              json.loads(merged)
-              pathlib.Path(path).write_text(merged, encoding="utf-8")
-          PY
-
-          while IFS= read -r path; do
-            git add "$path"
-          done <<< "$conflicts"
+          git checkout --theirs -- "$test_path"
+          git add "$test_path"
+          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+            echo "Unresolved paths remain after restoring upstream test" >&2
+            git cherry-pick --abort
+            exit 1
+          fi
           git cherry-pick --continue
 
-      - name: Replay remaining upstream commits with conflict stop
+      - name: Replay documentation and dependency security commits with conflict stop
         id: replay
         shell: bash
         run: |
           set -euo pipefail
           commits=(
-            cef42c9078ed2e1b5eafc608f65d12ff662d5e77
-            1b266e72783505b567a20732bb920115c67cb105
-            19989d272d9316ac1e1d22767116280b22de017b
             21cabdbc8fade5216bbc8dd2fd286df2dd842aab
             c29a5f9868a00bb4dc945cdf2bd7cc245e74011f
           )
@@ -165,8 +98,7 @@ jobs:
       - name: Finalize successful replay
         if: steps.replay.outputs.complete == 'true'
         run: |
-          printf 'status=complete\ntarget=c29a5f9868a00bb4dc945cdf2bd7cc245e74011f\n' > .github/upstream-cherry-pick-status.txt
-          git add .github/upstream-cherry-pick-status.txt
+          git rm --ignore-unmatch .github/upstream-cherry-pick-status.txt
           git rm .github/workflows/temp-upstream-cherry-pick.yml
-          git commit -m "chore(upstream): record replayed upstream head"
+          git commit -m "chore(upstream): complete replay through #6065"
           git push origin HEAD:${GITHUB_REF_NAME}
