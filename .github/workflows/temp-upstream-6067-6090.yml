@@ -29,13 +29,12 @@ jobs:
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
 
-      - name: Continue upstream replay from 6081
+      - name: Continue upstream replay from 6083
         id: replay
         shell: bash
         run: |
           set -euo pipefail
           commits=(
-            ee86510ccaf736c2cf887add305c5344420ab0a3
             34e4ebeeb500ddf245c0fef0bb6b6cf19651b809
             77e44eb92de25547a58f0b4c8b2e0b4f39c8d1a5
             44bba08f3dfa86a62e7fb39364abbbb864d9c261
@@ -55,22 +54,10 @@ jobs:
             fi
 
             conflicts="$(git diff --name-only --diff-filter=U)"
-            if [ "$sha" = "ee86510ccaf736c2cf887add305c5344420ab0a3" ] && [ -n "$conflicts" ]; then
-              echo "Resolving #6081: preserve fork dependency/workflow/memory deltas while applying Tauri plugin bumps"
-              git rm -f -- .github/workflows/nix-deps-check.yml
-              git checkout --ours -- \
-                apps/readest-app/.claude/memory/MEMORY.md \
-                apps/readest-app/package.json \
-                nix/package.nix \
-                pnpm-lock.yaml
-              python3 .github/scripts/temp-resolve-upstream-6081.py
-              git submodule update --init --depth 1 packages/foliate-js
-              npm exec --yes pnpm@11.1.1 -- install --lockfile-only --ignore-scripts
-              git add \
-                apps/readest-app/.claude/memory/MEMORY.md \
-                apps/readest-app/package.json \
-                nix/package.nix \
-                pnpm-lock.yaml
+            if [ "$sha" = "34e4ebeeb500ddf245c0fef0bb6b6cf19651b809" ] && [ "$conflicts" = "nix/package.nix" ]; then
+              echo "Resolving #6083: upstream CEF Nix structure matches fork except stale dependency hashes"
+              git checkout --theirs -- nix/package.nix
+              git add nix/package.nix
               git cherry-pick --continue
               continue
             fi
