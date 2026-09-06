@@ -43,9 +43,7 @@ jobs:
 
           mapfile -t commits < <(git rev-list --reverse "$base..$target")
           echo "Replaying ${#commits[@]} commits:"
-          for sha in "${commits[@]}"; do
-            git log -1 --format='  %H %s' "$sha"
-          done
+          for sha in "${commits[@]}"; do git log -1 --format='  %H %s' "$sha"; done
 
           for sha in "${commits[@]}"; do
             title="$(git log -1 --format=%s "$sha")"
@@ -56,29 +54,18 @@ jobs:
                 expected="$(printf '%s\n' \
                   'apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts' \
                   'apps/readest-app/src/services/constants.ts' | sort)"
-                if [ "$conflicts" != "$expected" ]; then
-                  echo "::error::Unexpected #6067 conflict set"
-                  printf '%s\n' "$conflicts"
-                  exit 1
-                fi
-
+                [ "$conflicts" = "$expected" ] || { echo "::error::Unexpected #6067 conflicts"; printf '%s\n' "$conflicts"; exit 1; }
                 git checkout --ours -- \
                   apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
                   apps/readest-app/src/services/constants.ts
-
                 python <<'PY'
           from pathlib import Path
-
           path = Path('apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts')
           text = path.read_text()
-
           old = "  const { setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
           new = "  const { settings, setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit('settings-store destructuring shape changed unexpectedly')
-
+          if old in text: text = text.replace(old, new, 1)
+          elif new not in text: raise SystemExit('settings-store destructuring changed')
           start = text.index('  const zoomInFactor = (factor = 1.0) => {')
           end = text.index('  const zoomIn = () => {', start)
           replacement = """  const applyShortcutFontSize = (fontSize: number) => {
@@ -101,9 +88,7 @@ jobs:
             if (!sideBarBookKey) return;
             const viewSettings = getViewSettings(sideBarBookKey)!;
             if (!getBookData(sideBarBookKey)?.isFixedLayout) {
-              applyShortcutFontSize(
-                (viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) + factor,
-              );
+              applyShortcutFontSize((viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) + factor);
               return;
             }
             const zoomLevel = viewSettings.zoomLevel + ZOOM_STEP * factor;
@@ -114,9 +99,7 @@ jobs:
             if (!sideBarBookKey) return;
             const viewSettings = getViewSettings(sideBarBookKey)!;
             if (!getBookData(sideBarBookKey)?.isFixedLayout) {
-              applyShortcutFontSize(
-                (viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) - factor,
-              );
+              applyShortcutFontSize((viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) - factor);
               return;
             }
             const zoomLevel = viewSettings.zoomLevel - ZOOM_STEP * factor;
@@ -125,13 +108,9 @@ jobs:
 
           """
           text = text[:start] + replacement + text[end:]
-
           text = text.replace(
               "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size);",
-              "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);",
-              1,
-          )
-
+              "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);", 1)
           start = text.index('  const resetZoom = () => {')
           end = text.index('  const toggleToolbar = () => {', start)
           replacement = """  const resetZoom = () => {
@@ -148,25 +127,27 @@ jobs:
           """
           text = text[:start] + replacement + text[end:]
           path.write_text(text)
-
           test_path = Path('apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx')
           test = test_path.read_text()
           if 'FONT_SIZE_LIMITS:' not in test:
               marker = '  ZOOM_STEP: 10,\n'
-              if marker not in test:
-                  raise SystemExit('constants mock shape changed unexpectedly')
-              test = test.replace(
-                  marker,
-                  marker + '  FONT_SIZE_LIMITS: { MIN: 8, MAX: 120, DEFAULT: 16 },\n',
-                  1,
-              )
+              if marker not in test: raise SystemExit('constants mock changed')
+              test = test.replace(marker, marker + '  FONT_SIZE_LIMITS: { MIN: 8, MAX: 120, DEFAULT: 16 },\n', 1)
           test_path.write_text(test)
           PY
-
                 git add \
                   apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
                   apps/readest-app/src/services/constants.ts \
                   apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx
+                GIT_EDITOR=true git cherry-pick --continue
+              elif [ "$sha" = "e56d867fdf823dfb873f5cfcff25b685d61895e0" ]; then
+                conflicts="$(git diff --name-only --diff-filter=U | sort)"
+                [ "$conflicts" = "nix/package.nix" ] || { echo "::error::Unexpected #6069 conflicts"; printf '%s\n' "$conflicts"; exit 1; }
+                # This commit only updates pnpmDeps.hash in Nix. The upstream hash
+                # is invalid for the fork lockfile; retain the fork value now and
+                # regenerate once all dependency-changing commits are replayed.
+                git checkout --ours -- nix/package.nix
+                git add nix/package.nix
                 GIT_EDITOR=true git cherry-pick --continue
               else
                 echo "::error::Conflict while replaying $sha $title"
