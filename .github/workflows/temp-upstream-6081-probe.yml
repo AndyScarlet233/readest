@@ -1,5 +1,5 @@
-name: "Temporary upstream #6081 replay probe"
-run-name: "Upstream #6081 replay probe · #${{ github.run_number }}"
+name: "Temporary upstream #6081 validation"
+run-name: "Upstream #6081 final validation · #${{ github.run_number }}"
 
 on:
   push:
@@ -12,16 +12,41 @@ permissions:
   contents: write
 
 jobs:
-  replay:
+  validate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 120
+    env:
+      NODE_OPTIONS: '--max-old-space-size=8192'
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+      NEXT_PUBLIC_APP_PLATFORM: tauri
+      NEXT_PUBLIC_POSTHOG_KEY: ''
+      SENTRY_DSN: ''
     steps:
-      - name: Checkout integration branch
+      - name: Checkout validated replay
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           submodules: recursive
+
+      - name: Restore fork barcode-scanner source without restoring fs patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "8d95c6a4af0eadf9dc394711ac0f2f209da498a2"
+          git checkout origin/main -- .gitmodules packages/tauri-plugins
+          git submodule sync -- packages/tauri-plugins
+          git submodule update --init packages/tauri-plugins
+          test "$(git -C packages/tauri-plugins rev-parse HEAD)" = "4350ca652d33e3face88d7c97a78830553545550"
+          grep -q '^tauri-plugin-barcode-scanner = { path = "../../../packages/tauri-plugins/plugins/barcode-scanner" }' apps/readest-app/src-tauri/Cargo.toml
+          ! grep -q '^tauri-plugin-fs = { path = "packages/tauri-plugins/plugins/fs" }' Cargo.toml
+          ! grep -q '^tauri-plugin-fs = { path = "packages/tauri-plugins/plugins/fs" }' Cargo.lock || true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
@@ -30,309 +55,291 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
+          cache: pnpm
 
-      - name: Replay official commits after #6066 through #6081
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          targets: aarch64-linux-android
+
+      - name: Verify Rust is new enough for CEF
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add official-upstream https://github.com/readest/readest.git || true
-          git fetch --no-tags official-upstream main
+          rustc -Vv
+          minor="$(rustc --version | sed -E 's/^rustc 1\.([0-9]+).*/\1/')"
+          test "$minor" -ge 95
 
-          base=53c0c1686333bc362ddc2a63068bc86cdd11a549
-          target=ee86510ccaf736c2cf887add305c5344420ab0a3
-          actual="$(git rev-parse official-upstream/main)"
-          if [ "$actual" != "$target" ]; then
-            echo "::error::Official upstream moved: expected $target, got $actual"
-            exit 1
-          fi
-          git merge-base --is-ancestor "$base" "$target"
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16
+        with:
+          key: upstream-6081-wry-cef-android
+          cache-all-crates: 'true'
+          cache-workspace-crates: 'true'
 
-          assert_conflicts() {
-            local label="$1"
-            shift
-            local actual expected
-            actual="$(git diff --name-only --diff-filter=U | sort)"
-            expected="$(printf '%s\n' "$@" | sort)"
-            if [ "$actual" != "$expected" ]; then
-              echo "::error::Unexpected $label conflict set"
-              echo "Actual:"; printf '%s\n' "$actual"
-              echo "Expected:"; printf '%s\n' "$expected"
+      - name: Setup Java 17
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+
+      - name: Install Android NDK and Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "ndk;28.2.13676358"
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config libfontconfig-dev libglib2.0-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            libsoup-3.0-dev xvfb jq
+
+      - name: Re-resolve fork Wry and CEF Cargo locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Wry graph: restore the fork barcode-scanner path dependency and let
+          # Cargo update the 2.11.5 graph. Verify the readest Tauri path patch is
+          # actually selected rather than silently falling back to crates.io.
+          cargo metadata --format-version 1 > /tmp/wry-metadata.json
+          jq -e '[.packages[] | select(.name == "tauri") | .manifest_path] | any(contains("/packages/tauri/crates/tauri/Cargo.toml"))' /tmp/wry-metadata.json
+
+          # CEF has a separate committed resolution. Swap it in exactly as the
+          # Linux tauri wrapper does, minimally re-resolve for the fork-only
+          # barcode plugin, then restore the Wry lock.
+          cp Cargo.lock /tmp/Cargo.lock.wry
+          cp Cargo.cef.lock Cargo.lock
+          (
+            cd apps/readest-app/src-tauri
+            cargo metadata --format-version 1 --no-default-features --features cef \
+              --config .cargo/cef.toml > /tmp/cef-metadata.json
+          )
+          cp Cargo.lock Cargo.cef.lock
+          cp /tmp/Cargo.lock.wry Cargo.lock
+          jq -e '[.packages[] | select(.name == "tauri") | (.source // "")] | any(contains("git+https://github.com/readest/tauri"))' /tmp/cef-metadata.json
+          grep -q 'name = "tauri-plugin-barcode-scanner"' Cargo.lock
+          grep -q 'name = "tauri-plugin-barcode-scanner"' Cargo.cef.lock
+          git add .gitmodules packages/tauri-plugins Cargo.lock Cargo.cef.lock
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Prepare frontend vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: Write deterministic test environment
+        shell: bash
+        run: |
+          cat > .env.local <<'EOF'
+          NEXT_PUBLIC_APP_PLATFORM=tauri
+          NEXT_PUBLIC_POSTHOG_KEY=
+          NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key
+          SENTRY_DSN=
+          EOF
+          cp .env.local apps/readest-app/.env.local
+
+      - name: TypeScript typecheck
+        run: pnpm --filter @readest/readest-app exec tsc --noEmit
+
+      - name: Run upstream and fork reader regressions
+        run: |
+          pnpm --filter @readest/readest-app exec vitest run \
+            src/__tests__/components/useBookShortcuts.test.tsx \
+            src/__tests__/components/UpdaterWindow.test.tsx \
+            src/__tests__/components/ViewTransitions.test.tsx \
+            src/__tests__/hooks/useAppRouter.test.ts \
+            src/__tests__/services/translators/providers.test.ts \
+            src/__tests__/components/SearchBar.test.tsx \
+            src/__tests__/services/tts-controller.test.ts \
+            src/__tests__/store/reader-store.test.ts \
+            src/__tests__/hooks/useTTSDownloads.test.tsx \
+            src/__tests__/services/tts-download-chapters.test.ts \
+            src/__tests__/utils/window.test.ts \
+            src/__tests__/foliate-pdf-redundant-render.test.ts \
+            src/__tests__/components/annotator/AnnotatorShortcuts.test.tsx \
+            src/__tests__/app/reader/foliate-viewer-relocate.test.tsx \
+            src/__tests__/services/tts-book-cache-store.test.ts \
+            src/__tests__/services/tts-pack-compaction.test.ts \
+            src/__tests__/services/query-range-reads.test.ts \
+            src/__tests__/utils/window-pointer-drag.test.ts \
+            src/__tests__/components/ImageViewer.test.tsx \
+            src/__tests__/app/reader/hooks/usePagination-mousePan.test.ts \
+            src/__tests__/reader/utils/iframeEventHandlers.test.ts \
+            --maxWorkers=2
+
+      - name: Install Chromium for browser regressions
+        run: pnpm --filter @readest/readest-app exec playwright install --with-deps chromium
+
+      - name: Run annotation and fixed-layout browser regressions
+        run: |
+          pnpm --filter @readest/readest-app exec vitest run \
+            --config vitest.browser.config.mts \
+            src/__tests__/components/annotation-popup-layout.browser.test.tsx \
+            src/__tests__/document/fixed-layout-pan-lock.browser.test.ts \
+            src/__tests__/document/pdf-pan-lock.browser.test.ts
+
+      - name: Check and test normal Wry Rust graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check -p Readest --locked
+          cargo test -p Readest --lib --locked
+
+      - name: Check Linux CEF Rust graph with its committed lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp Cargo.lock /tmp/Cargo.lock.wry-check
+          cp Cargo.cef.lock Cargo.lock
+          cleanup() {
+            cp Cargo.lock Cargo.cef.lock
+            cp /tmp/Cargo.lock.wry-check Cargo.lock
+          }
+          trap cleanup EXIT
+          (
+            cd apps/readest-app/src-tauri
+            cargo check -p Readest --locked --no-default-features --features cef \
+              --config .cargo/cef.toml
+          )
+          cleanup
+          trap - EXIT
+          git add Cargo.lock Cargo.cef.lock
+
+      - name: Regenerate Android scaffolding
+        run: |
+          cd apps/readest-app
+          rm -rf src-tauri/gen/android
+          pnpm tauri android init
+
+      - name: Build Google Play Android debug app through Tauri
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          ORG_GRADLE_PROJECT_storeFlavor: googleplay
+        run: |
+          cd apps/readest-app
+          pnpm tauri android build --debug -t aarch64 --config src-tauri/tauri.fork.conf.json
+          test -f src-tauri/gen/android/tauri.settings.gradle
+          test -f src-tauri/gen/android/app/tauri.build.gradle.kts
+
+      - name: Run Google Play billing bridge unit tests
+        env:
+          ORG_GRADLE_PROJECT_storeFlavor: googleplay
+        run: |
+          cd apps/readest-app/src-tauri/gen/android
+          chmod +x ./gradlew
+          ./gradlew testGoogleplayDebugUnitTest --stacktrace
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24
+
+      - name: Refresh fork-specific Nix dependency hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          refresh_hash() {
+            kind="$1"
+            target="$2"
+            python - "$kind" <<'PY'
+          from pathlib import Path
+          import re, sys
+          kind = sys.argv[1]
+          path = Path('nix/package.nix')
+          text = path.read_text()
+          if kind == 'pnpm':
+              start = text.index('  pnpmDeps = fetchPnpmDeps {')
+              end = text.index('  cargoRoot =', start)
+              block = text[start:end]
+              block, n = re.subn(r'    hash = "sha256-[^"]+";', '    hash = lib.fakeHash;', block, count=1)
+          elif kind == 'cargo':
+              block, n = re.subn(r'  cargoHash = "sha256-[^"]+";', '  cargoHash = lib.fakeHash;', text, count=1)
+              if n != 1: raise SystemExit('cargoHash replacement failed')
+              path.write_text(block)
+              raise SystemExit(0)
+          elif kind == 'turso':
+              start = text.index('  tursoPluginDeps = fetchPnpmDeps {')
+              end = text.index('  tursoPlugin =', start)
+              block = text[start:end]
+              block, n = re.subn(r'    hash = "sha256-[^"]+";', '    hash = lib.fakeHash;', block, count=1)
+          else:
+              raise SystemExit(f'unknown hash kind {kind}')
+          if n != 1: raise SystemExit(f'{kind} hash replacement failed')
+          path.write_text(text[:start] + block + text[end:])
+          PY
+
+            set +e
+            nix build -L "$target" 2>&1 | tee "/tmp/nix-${kind}.log"
+            status=${PIPESTATUS[0]}
+            set -e
+            if [ "$status" -eq 0 ]; then
+              echo "::error::Expected fake hash mismatch for $kind, but build succeeded"
               exit 1
             fi
-          }
-
-          mapfile -t commits < <(git rev-list --reverse "$base..$target")
-          echo "Replaying ${#commits[@]} commits:"
-          for sha in "${commits[@]}"; do git log -1 --format='  %H %s' "$sha"; done
-
-          for sha in "${commits[@]}"; do
-            title="$(git log -1 --format=%s "$sha")"
-            echo "::group::cherry-pick $sha $title"
-            if ! git cherry-pick "$sha"; then
-              case "$sha" in
-                dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac)
-                  assert_conflicts '#6067' \
-                    apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
-                    apps/readest-app/src/services/constants.ts
-                  git checkout --ours -- \
-                    apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
-                    apps/readest-app/src/services/constants.ts
-                  python <<'PY'
-          from pathlib import Path
-          path = Path('apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts')
-          text = path.read_text()
-          old = "  const { setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
-          new = "  const { settings, setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit('settings-store destructuring changed')
-
-          start = text.index('  const zoomInFactor = (factor = 1.0) => {')
-          end = text.index('  const zoomIn = () => {', start)
-          text = text[:start] + """  const applyShortcutFontSize = (fontSize: number) => {
-            if (!sideBarBookKey) return;
-            const viewSettings = getViewSettings(sideBarBookKey);
-            if (!viewSettings) return;
-            const minSize = Math.max(
-              FONT_SIZE_LIMITS.MIN,
-              viewSettings.minimumFontSize ?? FONT_SIZE_LIMITS.MIN,
-            );
-            const clamped = Math.min(
-              FONT_SIZE_LIMITS.MAX,
-              Math.max(minSize, Math.round(fontSize)),
-            );
-            if (clamped === viewSettings.defaultFontSize) return;
-            saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', clamped, true);
-          };
-
-          const zoomInFactor = (factor = 1.0) => {
-            if (!sideBarBookKey) return;
-            const viewSettings = getViewSettings(sideBarBookKey)!;
-            if (!getBookData(sideBarBookKey)?.isFixedLayout) {
-              applyShortcutFontSize((viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) + factor);
-              return;
-            }
-            const zoomLevel = viewSettings.zoomLevel + ZOOM_STEP * factor;
-            applyZoomLevel(Math.min(zoomLevel, MAX_ZOOM_LEVEL));
-          };
-
-          const zoomOutFactor = (factor = 1.0) => {
-            if (!sideBarBookKey) return;
-            const viewSettings = getViewSettings(sideBarBookKey)!;
-            if (!getBookData(sideBarBookKey)?.isFixedLayout) {
-              applyShortcutFontSize((viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) - factor);
-              return;
-            }
-            const zoomLevel = viewSettings.zoomLevel - ZOOM_STEP * factor;
-            applyZoomLevel(Math.max(zoomLevel, MIN_ZOOM_LEVEL));
-          };
-
-          """ + text[end:]
-          text = text.replace(
-              "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size);",
-              "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);",
-              1,
-          )
-          start = text.index('  const resetZoom = () => {')
-          end = text.index('  const toggleToolbar = () => {', start)
-          text = text[:start] + """  const resetZoom = () => {
-            if (!sideBarBookKey) return;
-            if (!getBookData(sideBarBookKey)?.isFixedLayout) {
-              applyShortcutFontSize(
-                settings.globalViewSettings?.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT,
-              );
-              return;
-            }
-            applyZoomLevel(100);
-          };
-
-          """ + text[end:]
-          path.write_text(text)
-
-          test_path = Path('apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx')
-          test = test_path.read_text()
-          if 'FONT_SIZE_LIMITS:' not in test:
-              marker = '  ZOOM_STEP: 10,\n'
-              if marker not in test:
-                  raise SystemExit('constants mock changed')
-              test = test.replace(
-                  marker,
-                  marker + '  FONT_SIZE_LIMITS: { MIN: 8, MAX: 120, DEFAULT: 16 },\n',
-                  1,
-              )
-          test_path.write_text(test)
-          PY
-                  git add \
-                    apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
-                    apps/readest-app/src/services/constants.ts \
-                    apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx
-                  GIT_EDITOR=true git cherry-pick --continue
-                  ;;
-
-                e56d867fdf823dfb873f5cfcff25b685d61895e0)
-                  assert_conflicts '#6069' nix/package.nix
-                  git checkout --ours -- nix/package.nix
-                  git add nix/package.nix
-                  GIT_EDITOR=true git cherry-pick --continue
-                  ;;
-
-                655c72ad5a91a0fa42df95f11de3996cf7b3dfac)
-                  assert_conflicts '#6074' \
-                    .github/workflows/nightly.yml \
-                    .github/workflows/pull-request.yml \
-                    .github/workflows/release.yml \
-                    apps/readest-app/src-tauri/src/transfer_file.rs \
-                    nix/package.nix
-
-                  git rm -f .github/workflows/nightly.yml .github/workflows/pull-request.yml
-                  git checkout --ours -- .github/workflows/release.yml
-                  git add .github/workflows/release.yml
-
-                  git checkout --ours -- apps/readest-app/src-tauri/src/transfer_file.rs
-                  python <<'PY'
-          from pathlib import Path
-          path = Path('apps/readest-app/src-tauri/src/transfer_file.rs')
-          text = path.read_text()
-          replacements = [
-              ('pub(crate) fn ensure_path_allowed(\n    app: &AppHandle,\n',
-               'pub(crate) fn ensure_path_allowed<R: tauri::Runtime>(\n    app: &AppHandle<R>,\n'),
-              ('pub async fn download_file(\n    app: AppHandle,\n',
-               'pub async fn download_file<R: tauri::Runtime>(\n    app: AppHandle<R>,\n'),
-              ('pub async fn upload_file(\n    app: AppHandle,\n',
-               'pub async fn upload_file<R: tauri::Runtime>(\n    app: AppHandle<R>,\n'),
-          ]
-          for old, new in replacements:
-              if old not in text:
-                  raise SystemExit(f'expected transfer_file signature not found: {old!r}')
-              text = text.replace(old, new, 1)
-          path.write_text(text)
-          PY
-                  git add apps/readest-app/src-tauri/src/transfer_file.rs
-                  git checkout --ours -- nix/package.nix
-                  git add nix/package.nix
-                  rm -rf packages/tauri-plugins
-                  GIT_EDITOR=true git cherry-pick --continue
-
-                  grep -q '"localsend_send_files"' apps/readest-app/src-tauri/build.rs
-                  grep -q '"lan_sync_start"' apps/readest-app/src-tauri/build.rs
-                  grep -q '"iap_purchase_product"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                  grep -q '"icloud_container_status"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                  grep -q '"set_multicast_lock"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                  grep -q '"set_sync_passphrase"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                  test -f apps/readest-app/src-tauri/tauri.fork.conf.json
-                  git diff --exit-code origin/main -- .github/workflows/release.yml
-                  ;;
-
-                ee86510ccaf736c2cf887add305c5344420ab0a3)
-                  assert_conflicts '#6081' \
-                    .github/workflows/nix-deps-check.yml \
-                    apps/readest-app/.claude/memory/MEMORY.md \
-                    apps/readest-app/package.json \
-                    nix/package.nix \
-                    pnpm-lock.yaml
-
-                  # The fork intentionally omits upstream's Nix PR workflow.
-                  git rm -f .github/workflows/nix-deps-check.yml
-
-                  # Preserve fork-specific agent memory/index entries, then add a
-                  # compact index for the new upstream memories rather than
-                  # replacing the whole fork index.
-                  git checkout --ours -- apps/readest-app/.claude/memory/MEMORY.md
-                  python <<'PY'
-          from pathlib import Path
-          path = Path('apps/readest-app/.claude/memory/MEMORY.md')
-          text = path.read_text()
-          notes = [
-              ('tauri-fork-bump-workspace-exclude-swift-rs.md', '- [Tauri 2.11.5 fork bump](tauri-fork-bump-workspace-exclude-swift-rs.md) workspace exclude + swift-rs relabel; tao 0.37 carries prior iOS scene fixes'),
-              ('fixed-layout-missing-primaryindex-tts-6071.md', '- [#6071 fixed-layout/PDF TTS relocation](fixed-layout-missing-primaryindex-tts-6071.md)'),
-              ('read-aloud-selection-onetime-5011.md', '- [#5011 read aloud selection](read-aloud-selection-onetime-5011.md)'),
-              ('overlayer-blend-mode-follows-page-not-theme-5790.md', '- [#5790/#5930/#5943 PDF highlight blend mode](overlayer-blend-mode-follows-page-not-theme-5790.md)'),
-              ('annotation-popup-fixed-wrapper-offset-6036.md', '- [#6036 annotation popup fixed-wrapper offset](annotation-popup-fixed-wrapper-offset-6036.md)'),
-              ('zoom-shortcuts-reflowable-font-size-5694.md', '- [#5694 reflowable zoom shortcuts](zoom-shortcuts-reflowable-font-size-5694.md)'),
-          ]
-          missing = [line for filename, line in notes if filename not in text]
-          if missing:
-              text = text.rstrip() + '\n\n## Upstream replay notes\n' + '\n'.join(missing) + '\n'
-          path.write_text(text)
-          PY
-
-                  # Start from the fork manifest (which includes barcode-scanner
-                  # and other fork dependencies) and apply only the upstream
-                  # Tauri plugin version bumps.
-                  git checkout --ours -- apps/readest-app/package.json
-                  python <<'PY'
-          from pathlib import Path
-          path = Path('apps/readest-app/package.json')
-          text = path.read_text()
-          bumps = {
-              '"@tauri-apps/plugin-biometric": "^2.3.2"': '"@tauri-apps/plugin-biometric": "^2.3.3"',
-              '"@tauri-apps/plugin-clipboard-manager": "^2.3.0"': '"@tauri-apps/plugin-clipboard-manager": "^2.3.3"',
-              '"@tauri-apps/plugin-deep-link": "^2.4.7"': '"@tauri-apps/plugin-deep-link": "^2.4.10"',
-              '"@tauri-apps/plugin-dialog": "^2.6.0"': '"@tauri-apps/plugin-dialog": "^2.7.3"',
-              '"@tauri-apps/plugin-fs": "^2.4.5"': '"@tauri-apps/plugin-fs": "^2.5.2"',
-              '"@tauri-apps/plugin-haptics": "^2.3.2"': '"@tauri-apps/plugin-haptics": "^2.3.3"',
-              '"@tauri-apps/plugin-http": "^2.5.7"': '"@tauri-apps/plugin-http": "^2.6.0"',
-              '"@tauri-apps/plugin-log": "^2.8.0"': '"@tauri-apps/plugin-log": "^2.9.1"',
-              '"@tauri-apps/plugin-opener": "^2.5.3"': '"@tauri-apps/plugin-opener": "^2.5.5"',
-              '"@tauri-apps/plugin-shell": "~2.3.5"': '"@tauri-apps/plugin-shell": "~2.3.6"',
-              '"@tauri-apps/plugin-updater": "^2.10.0"': '"@tauri-apps/plugin-updater": "^2.11.0"',
-              '"@tauri-apps/plugin-websocket": "~2.4.2"': '"@tauri-apps/plugin-websocket": "~2.4.3"',
-          }
-          for old, new in bumps.items():
-              if old not in text:
-                  raise SystemExit(f'expected package entry missing: {old}')
-              text = text.replace(old, new, 1)
-          if '"@tauri-apps/plugin-barcode-scanner"' not in text:
-              raise SystemExit('fork barcode-scanner dependency was lost')
-          path.write_text(text)
-          PY
-
-                  # Resolve the lock from the merged fork manifest; never take the
-                  # upstream lock wholesale because the fork has extra deps.
-                  git checkout --ours -- pnpm-lock.yaml nix/package.nix
-                  git add \
-                    apps/readest-app/.claude/memory/MEMORY.md \
-                    apps/readest-app/package.json \
-                    nix/package.nix
-                  pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts
-                  git add pnpm-lock.yaml
-                  GIT_EDITOR=true git cherry-pick --continue
-
-                  # Materialize the newly pinned submodules and verify the fork's
-                  # Tauri/path/runtime architecture survived the bump.
-                  git submodule sync --recursive
-                  git submodule update --init --recursive
-                  grep -q '"@tauri-apps/plugin-fs": "^2.5.2"' apps/readest-app/package.json
-                  grep -q '"@tauri-apps/plugin-barcode-scanner"' apps/readest-app/package.json
-                  grep -q '"localsend_send_files"' apps/readest-app/src-tauri/build.rs
-                  grep -q '"iap_purchase_product"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                  grep -q '"set_sync_passphrase"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                  ! grep -q '^tao = { path = "packages/tao" }' Cargo.toml
-                  git ls-tree HEAD packages/tauri | grep -q 3156d92b7f0299f71119c127321bee14df71f2cc
-                  test -f apps/readest-app/src-tauri/tauri.fork.conf.json
-                  git diff --exit-code origin/main -- .github/workflows/release.yml
-                  ;;
-
-                *)
-                  echo "::error::Conflict while replaying $sha $title"
-                  echo "Conflicted files:"
-                  git diff --name-only --diff-filter=U || true
-                  echo "Status:"
-                  git status --short || true
-                  git cherry-pick --abort || true
-                  exit 1
-                  ;;
-              esac
+            got="$(grep -E 'got:[[:space:]]+sha256-' "/tmp/nix-${kind}.log" | tail -1 | sed -E 's/.*got:[[:space:]]+(sha256-[A-Za-z0-9+\/=]+).*/\1/')"
+            if [ -z "$got" ]; then
+              echo "::error::Could not extract Nix got hash for $kind"
+              exit 1
             fi
-            echo "::endgroup::"
-          done
+            echo "$kind => $got"
+            python - "$kind" "$got" <<'PY'
+          from pathlib import Path
+          import sys
+          kind, got = sys.argv[1], sys.argv[2]
+          path = Path('nix/package.nix')
+          text = path.read_text()
+          if kind == 'cargo':
+              old = '  cargoHash = lib.fakeHash;'
+              new = f'  cargoHash = "{got}";'
+          else:
+              old = '    hash = lib.fakeHash;'
+              new = f'    hash = "{got}";'
+          if old not in text:
+              raise SystemExit(f'fake hash marker missing for {kind}')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+          }
 
-          echo "Final status before push:"
-          git status --short
-          test -z "$(git status --porcelain)"
-          echo "Changed files relative to fork main:"
-          git diff --name-status origin/main...HEAD
+          refresh_hash pnpm .#default.pnpmDeps
+          refresh_hash cargo .#default.cargoDeps
+          refresh_hash turso .#default.tursoPluginDeps
+          git add nix/package.nix
+          nix build -L --keep-going \
+            .#default.pnpmDeps \
+            .#default.tursoPluginDeps \
+            .#default.cargoDeps
+
+      - name: Recheck fork protections and official upstream head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code origin/main -- .github/workflows/release.yml
+          test "$(git rev-parse 2c682cda4404bc23378bfad640da11250ec30231:apps/readest-app/src/utils/access.ts)" = "$(git rev-parse origin/main:apps/readest-app/src/utils/access.ts)"
+          test "$(git rev-parse 2c682cda4404bc23378bfad640da11250ec30231:apps/readest-app/src/pages/api/storage/stats.ts)" = "$(git rev-parse origin/main:apps/readest-app/src/pages/api/storage/stats.ts)"
+          test "$(git rev-parse 2c682cda4404bc23378bfad640da11250ec30231:apps/readest-app/src/app/reader/hooks/usePagination.ts)" = "$(git rev-parse origin/main:apps/readest-app/src/app/reader/hooks/usePagination.ts)"
+          test "$(git rev-parse 2c682cda4404bc23378bfad640da11250ec30231:apps/readest-app/src-tauri/tauri.fork.conf.json)" = "$(git rev-parse origin/main:apps/readest-app/src-tauri/tauri.fork.conf.json)"
+          grep -q '"localsend_send_files"' apps/readest-app/src-tauri/build.rs
+          grep -q '"lan_sync_start"' apps/readest-app/src-tauri/build.rs
+          grep -q '"iap_purchase_product"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+          grep -q '"icloud_container_status"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+          grep -q '"set_multicast_lock"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+          grep -q '"set_sync_passphrase"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+
+          git remote add official-upstream https://github.com/readest/readest.git || true
+          git fetch --no-tags official-upstream main
+          test "$(git rev-parse official-upstream/main)" = "ee86510ccaf736c2cf887add305c5344420ab0a3"
+
+      - name: Commit validated fork reconciliation and remove temporary workflow
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add .gitmodules packages/tauri-plugins Cargo.lock Cargo.cef.lock nix/package.nix
+          git rm .github/workflows/temp-upstream-6081-probe.yml
+          git diff --cached --check
+          git diff --cached --name-status
+          git commit -m "chore(upstream): validate fork replay through #6081"
           HUSKY=0 git push origin HEAD:${GITHUB_REF_NAME}
