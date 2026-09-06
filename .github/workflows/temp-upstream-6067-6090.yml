@@ -29,15 +29,12 @@ jobs:
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
 
-      - name: Continue upstream replay from 6074
+      - name: Continue upstream replay from 6081
         id: replay
         shell: bash
         run: |
           set -euo pipefail
           commits=(
-            655c72ad5a91a0fa42df95f11de3996cf7b3dfac
-            3723c1625d3735745e76e8e0e1fdb4d59f059eda
-            4918297fef1a8d6d129ff63b3ed2d7402b5fe1d9
             ee86510ccaf736c2cf887add305c5344420ab0a3
             34e4ebeeb500ddf245c0fef0bb6b6cf19651b809
             77e44eb92de25547a58f0b4c8b2e0b4f39c8d1a5
@@ -58,18 +55,21 @@ jobs:
             fi
 
             conflicts="$(git diff --name-only --diff-filter=U)"
-            if [ "$sha" = "655c72ad5a91a0fa42df95f11de3996cf7b3dfac" ] && [ -n "$conflicts" ]; then
-              echo "Resolving #6074: keep fork workflows/Nix, merge only CEF runtime genericity into hardened transfer layer"
-              git rm -f -- .github/workflows/nightly.yml .github/workflows/pull-request.yml
+            if [ "$sha" = "ee86510ccaf736c2cf887add305c5344420ab0a3" ] && [ -n "$conflicts" ]; then
+              echo "Resolving #6081: preserve fork dependency/workflow/memory deltas while applying Tauri plugin bumps"
+              git rm -f -- .github/workflows/nix-deps-check.yml
               git checkout --ours -- \
-                .github/workflows/release.yml \
-                apps/readest-app/src-tauri/src/transfer_file.rs \
-                nix/package.nix
-              python3 .github/scripts/temp-resolve-upstream-6074.py
+                apps/readest-app/.claude/memory/MEMORY.md \
+                apps/readest-app/package.json \
+                nix/package.nix \
+                pnpm-lock.yaml
+              python3 .github/scripts/temp-resolve-upstream-6081.py
+              npm exec --yes pnpm@11.1.1 -- install --lockfile-only --ignore-scripts
               git add \
-                .github/workflows/release.yml \
-                apps/readest-app/src-tauri/src/transfer_file.rs \
-                nix/package.nix
+                apps/readest-app/.claude/memory/MEMORY.md \
+                apps/readest-app/package.json \
+                nix/package.nix \
+                pnpm-lock.yaml
               git cherry-pick --continue
               continue
             fi
@@ -102,5 +102,6 @@ jobs:
           git rm .github/workflows/temp-upstream-6067-6090.yml
           git rm .github/scripts/temp-resolve-upstream-6067.py
           git rm .github/scripts/temp-resolve-upstream-6074.py
+          git rm .github/scripts/temp-resolve-upstream-6081.py
           git commit -m "chore(upstream): record replay through #6090"
           git push origin HEAD:${GITHUB_REF_NAME}
