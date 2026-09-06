@@ -2245,5 +2245,8 @@
   "This is not a ReadEra backup file.": "นี่ไม่ใช่ไฟล์สำรองข้อมูลของ ReadEra",
   "This book was not found in the ReadEra backup.": "ไม่พบหนังสือเล่มนี้ในข้อมูลสำรองของ ReadEra",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ไฟล์สำรองข้อมูลของ ReadEra (.bak)"
+  "ReadEra backup file (.bak)": "ไฟล์สำรองข้อมูลของ ReadEra (.bak)",
+  "Speech": "เสียงพูด",
+  "Skip Parenthetical Readings": "ข้ามคำอ่านในวงเล็บ",
+  "Do not speak kana or Han readings shown after Han text": "ไม่อ่านคำอ่านคานะหรือฮั่นที่แสดงหลังข้อความฮั่น"
 }

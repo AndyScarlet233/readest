@@ -2425,5 +2425,8 @@
   "This is not a ReadEra backup file.": "Это не файл резервной копии ReadEra.",
   "This book was not found in the ReadEra backup.": "Эта книга не найдена в резервной копии ReadEra.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "Файл резервной копии ReadEra (.bak)"
+  "ReadEra backup file (.bak)": "Файл резервной копии ReadEra (.bak)",
+  "Speech": "Речь",
+  "Skip Parenthetical Readings": "Пропускать чтения в скобках",
+  "Do not speak kana or Han readings shown after Han text": "Не произносить чтения каной или ханскими иероглифами после текста хан"
 }

@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "این یک فایل پشتیبان ReadEra نیست.",
   "This book was not found in the ReadEra backup.": "این کتاب در پشتیبان ReadEra پیدا نشد.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "فایل پشتیبان ReadEra ‏(.bak)"
+  "ReadEra backup file (.bak)": "فایل پشتیبان ReadEra ‏(.bak)",
+  "Speech": "گفتار",
+  "Skip Parenthetical Readings": "رد کردن خوانش‌های داخل پرانتز",
+  "Do not speak kana or Han readings shown after Han text": "خوانش‌های کانا یا هان که پس از متن هان آمده‌اند خوانده نشوند"
 }

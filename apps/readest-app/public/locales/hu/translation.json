@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "Ez a fájl nem ReadEra biztonsági mentés.",
   "This book was not found in the ReadEra backup.": "Ez a könyv nem található a ReadEra biztonsági mentésben.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra biztonsági mentés fájlja (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra biztonsági mentés fájlja (.bak)",
+  "Speech": "Beszéd",
+  "Skip Parenthetical Readings": "Zárójeles olvasatok kihagyása",
+  "Do not speak kana or Han readings shown after Han text": "A han szöveg után megjelenő kana- vagy han-olvasatokat ne olvassa fel"
 }

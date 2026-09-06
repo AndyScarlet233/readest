@@ -2245,5 +2245,8 @@
   "This is not a ReadEra backup file.": "Ini bukan file cadangan ReadEra.",
   "This book was not found in the ReadEra backup.": "Buku ini tidak ditemukan dalam cadangan ReadEra.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "File cadangan ReadEra (.bak)"
+  "ReadEra backup file (.bak)": "File cadangan ReadEra (.bak)",
+  "Speech": "Ucapan",
+  "Skip Parenthetical Readings": "Lewati Bacaan dalam Tanda Kurung",
+  "Do not speak kana or Han readings shown after Han text": "Jangan ucapkan bacaan kana atau Han yang ditampilkan setelah teks Han"
 }

@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "Dies ist keine ReadEra-Sicherungsdatei.",
   "This book was not found in the ReadEra backup.": "Dieses Buch wurde in der ReadEra-Sicherung nicht gefunden.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra-Sicherungsdatei (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra-Sicherungsdatei (.bak)",
+  "Speech": "Sprachausgabe",
+  "Skip Parenthetical Readings": "Lesungen in Klammern überspringen",
+  "Do not speak kana or Han readings shown after Han text": "Kana- oder Han-Lesungen nach Han-Text nicht vorlesen"
 }

@@ -117,8 +117,14 @@ const getFontStyles = (
       -webkit-text-size-adjust: none;
       text-size-adjust: none;
     }
-    /* lower specificity than ebook built-in font styles */
-    html {
+    /* Zero specificity (:where) so ANY ebook font-family declaration — even
+       one on the html element itself, at equal (0,0,1) specificity — wins the
+       cascade regardless of injection order. Books like Pandoc-generated
+       EPUBs declare their font on the html element; a plain html rule here
+       ties on specificity and wins only by being appended later, silently
+       overriding the book's embedded font with the app's default font
+       (mobile especially, whose default font is sans-serif). */
+    :where(html) {
       font-family: var(${defaultFontFamily}) ${overrideFont ? '!important' : ''};
     }
     /* higher specificity than ebook built-in font styles */
@@ -150,8 +156,13 @@ const getFontStyles = (
     [style*="font-size: 16px"], [style*="font-size:16px"] {
       font-size: 1rem !important;
     }
-    pre, code, kbd {
-      font-family: var(--monospace);
+    /* The revert pass below deliberately excludes pre/code/kbd, so this is the
+       only rule that applies the app's code font and it has to swap sides with
+       the toggle. Off: zero specificity, so a book's own code font wins. On:
+       above the book, and !important is not enough on its own because
+       specificity still breaks ties between important author declarations. */
+    ${overrideFont ? 'html body :is(pre, code, kbd)' : ':where(pre, code, kbd)'} {
+      font-family: var(--monospace) ${overrideFont ? '!important' : ''};
       font-variant-ligatures: none;
     }
     body *:not(pre, code, kbd, .code):not(pre *, code *, kbd *, .code *) {
@@ -1288,17 +1299,35 @@ export const transformStylesheet = (
     .replace(/([\s;])-ms-user-select\s*:\s*none/gi, '$1-ms-user-select: unset')
     .replace(/([\s;])-o-user-select\s*:\s*none/gi, '$1-o-user-select: unset')
     .replace(/([\s;])user-select\s*:\s*none/gi, '$1user-select: unset')
-    // Park the `var(--x, x)` chunks an earlier pass already produced: their
-    // inner keywords would otherwise be rewritten again into
-    // `var(--var(--serif, serif), serif)`, which is invalid, so the CSS parser
-    // drops the whole declaration and the book loses its fonts (readest#5277).
-    // The placeholders are underscore-wrapped so `\b` never matches inside them.
-    .replace(/var\(\s*--(sans-serif|serif|monospace)\s*,\s*\1\s*\)/gi, 'READEST_GF_$1_PLACEHOLDER')
-    .replace(/(font-family\s*:[^;]*?)\bsans-serif\b/gi, '$1READEST_SS_PLACEHOLDER')
-    .replace(/(font-family\s*:[^;]*?)\bserif\b(?!-)/gi, '$1var(--serif, serif)')
-    .replace(/READEST_SS_PLACEHOLDER/g, 'var(--sans-serif, sans-serif)')
-    .replace(/(font-family\s*:[^;]*?)\bmonospace\b/gi, '$1var(--monospace, monospace)')
-    .replace(/READEST_GF_(sans-serif|serif|monospace)_PLACEHOLDER/gi, 'var(--$1, $1)')
+    // Point the generic families at the user's per-category font choice, so a
+    // book that asks for `serif` gets the configured serif chain (which also
+    // carries the CJK font) instead of the platform default.
+    //
+    // Only a list item that IS the bare keyword may be rewritten. Matching the
+    // word anywhere in the declaration also hit the book's own family names:
+    // `font-family: Source Han Serif CN` became `Source Han var(--serif, serif) CN`,
+    // and since CSS descriptors cannot contain var() the engine dropped the
+    // whole @font-face rule, detaching the book's only reference to its
+    // embedded font (readest#6047).
+    //
+    // Parking the keyword inside the var() fallback also makes this idempotent:
+    // a stylesheet can be handed to this transform more than once, and a second
+    // pass no longer sees a bare generic to rewrite into
+    // `var(--var(--serif, serif), serif)` (readest#5277).
+    .replace(/(font-family\s*:\s*)([^;{}]*)/gi, (_match: string, prefix: string, value: string) => {
+      const important = /\s*!\s*important\s*$/i.exec(value);
+      const families = important ? value.slice(0, important.index) : value;
+      const rewritten = families
+        .split(',')
+        .map((family: string) => {
+          const generic = /^(serif|sans-serif|monospace)$/i.exec(family.trim());
+          if (!generic) return family;
+          const name = generic[1]!.toLowerCase();
+          return family.replace(generic[1]!, `var(--${name}, ${name})`);
+        })
+        .join(',');
+      return prefix + rewritten + (important ? important[0] : '');
+    })
     .replace(/([\s;])font-weight\s*:\s*normal/gi, '$1font-weight: var(--font-weight)')
     .replace(/([\s;])color\s*:\s*black/gi, '$1color: var(--theme-fg-color)')
     .replace(/([\s;])color\s*:\s*#000000/gi, '$1color: var(--theme-fg-color)')
@@ -1335,6 +1364,7 @@ export const applyScrollModeClass = (document: Document, isScrollMode: boolean) 
 
 // A prefixed attribute name, e.g. the `epub:type` of `epub:type="chapter"`.
 const PREFIXED_ATTR_REGEX = /^([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)$/;
+const EPUB_OPS_NAMESPACE = 'http://www.idpf.org/2007/ops';
 
 /**
  * Re-attach the namespaces an XHTML section declared to its prefixed
@@ -1368,7 +1398,12 @@ export const applyNamespacedAttributes = (document: Document) => {
     for (const { name, value } of Array.from(element.attributes)) {
       const [, prefix, localName] = PREFIXED_ATTR_REGEX.exec(name) ?? [];
       if (!prefix) continue;
-      const uri = lookupNamespace(element, prefix);
+      // Foliate can hand us a section fragment rather than the source XHTML
+      // document, so the declaration on the original <html> may be gone.
+      // `epub` has one fixed namespace in EPUB, which is enough to restore the
+      // selectors used by the book's stylesheet (including noteref markers).
+      const uri =
+        lookupNamespace(element, prefix) ?? (prefix === 'epub' ? EPUB_OPS_NAMESPACE : null);
       if (uri && !element.hasAttributeNS(uri, localName!)) {
         element.setAttributeNS(uri, name, value);
       }
@@ -1508,6 +1543,41 @@ export const keepTextAlignment = (document: Document) => {
     const cls = alignClasses[i];
     if (cls) els[i]!.classList.add(cls);
   }
+};
+
+/**
+ * Blend mode for the annotation overlay (`--overlayer-highlight-blend-mode`).
+ *
+ * The overlay is an SVG sibling of the content iframe, so it blends against
+ * whatever the page paints behind it — the mode has to follow the *page*
+ * background, not the app theme. `screen` lightens a dark page, but over a
+ * white one it is a no-op on the background and only tints the glyphs, which is
+ * how highlights went missing on PDFs in dark mode (#5790, #5930, #5943). A
+ * pre-paginated page keeps the book's own bitmap unless the reader asked us to
+ * invert it or to re-render it in the theme colors, so a dark theme alone says
+ * nothing about how dark the page is. Blending does not cross the iframe
+ * boundary in WebKit, which is why Apple platforms never showed the bug.
+ */
+export const getOverlayerBlendMode = ({
+  isDarkMode,
+  isBwEink,
+  isFixedLayout = false,
+  invertImgColorInDark = false,
+  applyThemeToPDF = false,
+  format,
+}: {
+  isDarkMode: boolean;
+  isBwEink: boolean;
+  isFixedLayout?: boolean;
+  invertImgColorInDark?: boolean;
+  applyThemeToPDF?: boolean;
+  format?: BookFormat;
+}): 'difference' | 'screen' | 'multiply' => {
+  if (isBwEink) return 'difference';
+  if (!isDarkMode) return 'multiply';
+  const isDarkPage =
+    !isFixedLayout || invertImgColorInDark || (format === 'PDF' && applyThemeToPDF);
+  return isDarkPage ? 'screen' : 'multiply';
 };
 
 export const applyFixedlayoutStyles = (

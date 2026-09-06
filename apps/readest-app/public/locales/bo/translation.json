@@ -2245,5 +2245,8 @@
   "This is not a ReadEra backup file.": "འདི་ནི་ ReadEra གྲབས་ཉར་ཡིག་ཆ་མིན།",
   "This book was not found in the ReadEra backup.": "དཔེ་དེབ་འདི་ ReadEra གྲབས་ཉར་ནང་མ་རྙེད།",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra གྲབས་ཉར་ཡིག་ཆ (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra གྲབས་ཉར་ཡིག་ཆ (.bak)",
+  "Speech": "སྐད་ཆ།",
+  "Skip Parenthetical Readings": "གུག་རྟགས་ནང་གི་ཀློག་ཚུལ་སྐྱུར་བ།",
+  "Do not speak kana or Han readings shown after Han text": "ཧན་ཡི་གེའི་རྗེས་སུ་བསྟན་པའི་ཀ་ནའམ་ཧན་གྱི་ཀློག་ཚུལ་མ་ཀློག"
 }

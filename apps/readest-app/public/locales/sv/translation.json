@@ -2305,5 +2305,8 @@
   "This is not a ReadEra backup file.": "Det här är inte en ReadEra-säkerhetskopia.",
   "This book was not found in the ReadEra backup.": "Den här boken hittades inte i ReadEra-säkerhetskopian.",
   "ReadEra": "ReadEra",
-  "ReadEra backup file (.bak)": "ReadEra-säkerhetskopia (.bak)"
+  "ReadEra backup file (.bak)": "ReadEra-säkerhetskopia (.bak)",
+  "Speech": "Tal",
+  "Skip Parenthetical Readings": "Hoppa över läsningar inom parentes",
+  "Do not speak kana or Han readings shown after Han text": "Läs inte upp kana- eller han-läsningar som visas efter han-text"
 }

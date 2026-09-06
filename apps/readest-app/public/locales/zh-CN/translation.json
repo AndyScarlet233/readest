@@ -2293,5 +2293,8 @@
   "Keep this screen on so nearby devices can find you.": "保持此屏幕点亮，附近设备才能找到你。",
   "Devices disappear from the list when their screen turns off; keep the screen on to stay visible.": "设备屏幕关闭后会从列表中消失；保持屏幕点亮以持续可见。",
   "{{name}}'s Readest": "{{name}} 的 Readest",
-  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} 想要向您发送 {{count}} 本书"
+  "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} 想要向您发送 {{count}} 本书",
+  "Speech": "语音",
+  "Skip Parenthetical Readings": "跳过括号内的读音",
+  "Do not speak kana or Han readings shown after Han text": "不朗读汉字文本后显示的假名或汉字读音"
 }

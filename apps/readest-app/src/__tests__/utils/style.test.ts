@@ -163,7 +163,7 @@ describe('transformStylesheet', () => {
     });
   });
 
-  describe('font-family replacements', () => {
+  describe('font-family generic replacements', () => {
     it('replaces serif with var(--serif, serif)', () => {
       const css = '.text { font-family: serif; }';
       const result = transformStylesheet(css, VW, VH, VERTICAL);
@@ -182,11 +182,63 @@ describe('transformStylesheet', () => {
       expect(result).toContain('var(--monospace, monospace)');
     });
 
+    it('keeps a trailing !important on the declaration', () => {
+      const css = '.text { font-family: serif !important; }';
+      const result = transformStylesheet(css, VW, VH, VERTICAL);
+      expect(result).toContain('font-family: var(--serif, serif) !important');
+    });
+
+    it('replaces every generic in a list, not just the first', () => {
+      const css = '.text { font-family: Helvetica, sans-serif, monospace; }';
+      const result = transformStylesheet(css, VW, VH, VERTICAL);
+      expect(result).toContain(
+        'font-family: Helvetica, var(--sans-serif, sans-serif), var(--monospace, monospace)',
+      );
+    });
+
+    // Regression (#6047): the rewriting used to match the words
+    // serif/sans-serif/monospace ANYWHERE in the declaration, including inside
+    // the book's own family names. The injected var() is a real function in an
+    // unquoted name, and since CSS descriptors cannot contain var() every
+    // engine drops the whole @font-face rule - the book's embedded font was
+    // detached and never applied. Only a list item that IS the bare keyword may
+    // be replaced.
+    it('leaves an unquoted font name containing "Serif" untouched', () => {
+      const css =
+        '@font-face { font-family: Source Han Serif CN; src: url("f.ttf"); }\n' +
+        'body { font-family: Source Han Serif CN, serif; }';
+      const result = transformStylesheet(css, VW, VH, VERTICAL);
+      expect(result).toContain('@font-face { font-family: Source Han Serif CN;');
+      expect(result).toContain('font-family: Source Han Serif CN, var(--serif, serif)');
+    });
+
+    it('leaves a quoted font name containing "Serif" untouched', () => {
+      const css = 'p { font-family: "Comic Serif Face", serif; }';
+      const result = transformStylesheet(css, VW, VH, VERTICAL);
+      expect(result).toContain('font-family: "Comic Serif Face", var(--serif, serif)');
+    });
+
+    it('leaves font names containing sans-serif/monospace words untouched', () => {
+      const css = '@font-face { font-family: "Ovo Sans-Serif Mono"; src: url(f.woff); }';
+      const result = transformStylesheet(css, VW, VH, VERTICAL);
+      expect(result).toContain('"Ovo Sans-Serif Mono"');
+      expect(result).not.toContain('var(--sans-serif');
+      expect(result).not.toContain('var(--monospace');
+    });
+
+    it('leaves an unquoted family that is only a generic-looking word alone', () => {
+      const css = 'p { font-family: Serifa, Monospaced; }';
+      const result = transformStylesheet(css, VW, VH, VERTICAL);
+      expect(result).toContain('font-family: Serifa, Monospaced');
+      expect(result).not.toContain('var(--');
+    });
+
     // Regression test for #5277: a stylesheet can be handed to this transform
     // more than once. Rewriting the generic families again turned them into
     // `var(--var(--serif, serif), serif)`, which the CSS parser drops - the
     // book's font-family declarations vanished and the reader's own font
-    // showed through instead.
+    // showed through instead. The var() fallback parks the keyword inside
+    // parentheses, so a second pass no longer sees a bare generic.
     describe('idempotence', () => {
       const cases = [
         ['.text { font-family: serif; }', 'var(--serif, serif)'],
