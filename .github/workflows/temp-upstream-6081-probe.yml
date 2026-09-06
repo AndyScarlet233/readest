@@ -51,13 +51,145 @@ jobs:
             title="$(git log -1 --format=%s "$sha")"
             echo "::group::cherry-pick $sha $title"
             if ! git cherry-pick "$sha"; then
-              echo "::error::Conflict while replaying $sha $title"
-              echo "Conflicted files:"
-              git diff --name-only --diff-filter=U || true
-              echo "Status:"
-              git status --short || true
-              git cherry-pick --abort || true
-              exit 1
+              if [ "$sha" = "dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac" ]; then
+                conflicts="$(git diff --name-only --diff-filter=U | sort)"
+                expected="$(printf '%s\n' \
+                  'apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts' \
+                  'apps/readest-app/src/services/constants.ts' | sort)"
+                if [ "$conflicts" != "$expected" ]; then
+                  echo "::error::Unexpected #6067 conflict set"
+                  printf '%s\n' "$conflicts"
+                  exit 1
+                fi
+
+                # Keep the fork's richer Ctrl+wheel font-size implementation and
+                # existing FONT_SIZE_LIMITS. Add only #6067's keyboard zoom/reset
+                # semantics, preserving per-book zoom behavior with skipGlobal=true.
+                git checkout --ours -- \
+                  apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
+                  apps/readest-app/src/services/constants.ts
+
+                python <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts')
+          text = path.read_text()
+
+          old = "  const { setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
+          new = "  const { settings, setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = """  const zoomInFactor = (factor = 1.0) => {
+            if (!sideBarBookKey) return;
+            const viewSettings = getViewSettings(sideBarBookKey)!;
+            const zoomLevel = viewSettings!.zoomLevel + ZOOM_STEP * factor;
+            applyZoomLevel(Math.min(zoomLevel, MAX_ZOOM_LEVEL));
+          };
+
+          const zoomOutFactor = (factor = 1.0) => {
+            if (!sideBarBookKey) return;
+            const viewSettings = getViewSettings(sideBarBookKey)!;
+            const zoomLevel = viewSettings!.zoomLevel - ZOOM_STEP * factor;
+            applyZoomLevel(Math.max(zoomLevel, MIN_ZOOM_LEVEL));
+          };
+          """
+          new = """  const applyShortcutFontSize = (fontSize: number) => {
+            if (!sideBarBookKey) return;
+            const viewSettings = getViewSettings(sideBarBookKey);
+            if (!viewSettings) return;
+            const minSize = Math.max(
+              FONT_SIZE_LIMITS.MIN,
+              viewSettings.minimumFontSize ?? FONT_SIZE_LIMITS.MIN,
+            );
+            const clamped = Math.min(
+              FONT_SIZE_LIMITS.MAX,
+              Math.max(minSize, Math.round(fontSize)),
+            );
+            if (clamped === viewSettings.defaultFontSize) return;
+            saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', clamped, true);
+          };
+
+          const zoomInFactor = (factor = 1.0) => {
+            if (!sideBarBookKey) return;
+            const viewSettings = getViewSettings(sideBarBookKey)!;
+            if (!getBookData(sideBarBookKey)?.isFixedLayout) {
+              applyShortcutFontSize(
+                (viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) + factor,
+              );
+              return;
+            }
+            const zoomLevel = viewSettings.zoomLevel + ZOOM_STEP * factor;
+            applyZoomLevel(Math.min(zoomLevel, MAX_ZOOM_LEVEL));
+          };
+
+          const zoomOutFactor = (factor = 1.0) => {
+            if (!sideBarBookKey) return;
+            const viewSettings = getViewSettings(sideBarBookKey)!;
+            if (!getBookData(sideBarBookKey)?.isFixedLayout) {
+              applyShortcutFontSize(
+                (viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT) - factor,
+              );
+              return;
+            }
+            const zoomLevel = viewSettings.zoomLevel - ZOOM_STEP * factor;
+            applyZoomLevel(Math.max(zoomLevel, MIN_ZOOM_LEVEL));
+          };
+          """
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = "      saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size);"
+          new = "      saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);"
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = """  const resetZoom = () => {
+            if (!sideBarBookKey) return;
+            applyZoomLevel(100);
+          };
+          """
+          new = """  const resetZoom = () => {
+            if (!sideBarBookKey) return;
+            if (!getBookData(sideBarBookKey)?.isFixedLayout) {
+              applyShortcutFontSize(
+                settings.globalViewSettings?.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT,
+              );
+              return;
+            }
+            applyZoomLevel(100);
+          };
+          """
+          assert old in text
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          test_path = Path('apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx')
+          test = test_path.read_text()
+          needle = "  ZOOM_STEP: 10,\n  MAX_FONT_SIZE: 120,"
+          replacement = (
+              "  ZOOM_STEP: 10,\n"
+              "  FONT_SIZE_LIMITS: { MIN: 8, MAX: 120, DEFAULT: 16 },\n"
+              "  MAX_FONT_SIZE: 120,"
+          )
+          assert needle in test
+          test_path.write_text(test.replace(needle, replacement, 1))
+          PY
+
+                git add \
+                  apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
+                  apps/readest-app/src/services/constants.ts \
+                  apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx
+                GIT_EDITOR=true git cherry-pick --continue
+              else
+                echo "::error::Conflict while replaying $sha $title"
+                echo "Conflicted files:"
+                git diff --name-only --diff-filter=U || true
+                echo "Status:"
+                git status --short || true
+                git cherry-pick --abort || true
+                exit 1
+              fi
             fi
             echo "::endgroup::"
           done
