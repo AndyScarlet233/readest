@@ -1,0 +1,67 @@
+name: "Temporary upstream #6081 replay probe"
+run-name: "Upstream #6081 replay probe · #${{ github.run_number }}"
+
+on:
+  push:
+    branches:
+      - integrate/upstream-6067-6081-2026-09-06
+    paths:
+      - '.github/workflows/temp-upstream-6081-probe.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  replay:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Replay official commits after #6066 through #6081
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add official-upstream https://github.com/readest/readest.git || true
+          git fetch --no-tags official-upstream main
+
+          base=53c0c1686333bc362ddc2a63068bc86cdd11a549
+          target=ee86510ccaf736c2cf887add305c5344420ab0a3
+          actual="$(git rev-parse official-upstream/main)"
+          if [ "$actual" != "$target" ]; then
+            echo "::error::Official upstream moved: expected $target, got $actual"
+            exit 1
+          fi
+          git merge-base --is-ancestor "$base" "$target"
+
+          mapfile -t commits < <(git rev-list --reverse "$base..$target")
+          echo "Replaying ${#commits[@]} commits:"
+          for sha in "${commits[@]}"; do
+            git log -1 --format='  %H %s' "$sha"
+          done
+
+          for sha in "${commits[@]}"; do
+            title="$(git log -1 --format=%s "$sha")"
+            echo "::group::cherry-pick $sha $title"
+            if ! git cherry-pick "$sha"; then
+              echo "::error::Conflict while replaying $sha $title"
+              echo "Conflicted files:"
+              git diff --name-only --diff-filter=U || true
+              echo "Status:"
+              git status --short || true
+              git cherry-pick --abort || true
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+
+          echo "Changed files relative to fork main:"
+          git diff --name-status origin/main...HEAD
+          HUSKY=0 git push origin HEAD:${GITHUB_REF_NAME}
