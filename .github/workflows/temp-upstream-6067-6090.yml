@@ -1,0 +1,101 @@
+name: Temporary upstream 6067-6090 replay
+
+on:
+  push:
+    branches:
+      - integrate/upstream-6067-6090-2026-09-06
+
+permissions:
+  contents: write
+
+jobs:
+  replay-upstream:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out integration branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch official upstream
+        run: |
+          git remote add official-upstream https://github.com/readest/readest.git || true
+          git fetch --no-tags official-upstream main
+
+      - name: Replay only upstream commits after 6066
+        id: replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          commits=(
+            dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac
+            65287bd3eb1d2772c8880f9216b262d1daf0077e
+            e56d867fdf823dfb873f5cfcff25b685d61895e0
+            a268fd2f02170cfa9ea2384091065f636fa89096
+            d761570f0ab09d1fdccb63a668c1ef0f7d4d7189
+            ff97b337fbfddb6b794e8c64e4832dfccf24f3e7
+            9f1e6a7adba67ebbd363626385ef04a6f2eb0a5d
+            860d6d00bce306db2e2830bee729c059a61b526f
+            5bae2e37923f6498a4bd2b3c20f627ea947dea37
+            655c72ad5a91a0fa42df95f11de3996cf7b3dfac
+            3723c1625d3735745e76e8e0e1fdb4d59f059eda
+            4918297fef1a8d6d129ff63b3ed2d7402b5fe1d9
+            ee86510ccaf736c2cf887add305c5344420ab0a3
+            34e4ebeeb500ddf245c0fef0bb6b6cf19651b809
+            77e44eb92de25547a58f0b4c8b2e0b4f39c8d1a5
+            44bba08f3dfa86a62e7fb39364abbbb864d9c261
+            32c42100d06b8b086b1af2449f43a7738f5b54d9
+            d13edf4efee3c9b975bb77a991806c7fd9f9b3d6
+            04379b8f833983de90d0f5f5db7da3acfb3aa27a
+          )
+          rm -f .github/upstream-6067-6090-status.txt
+          for sha in "${commits[@]}"; do
+            if git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+              echo "Already present: $sha"
+              continue
+            fi
+            echo "Replaying $sha"
+            set +e
+            git cherry-pick "$sha"
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              continue
+            fi
+
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            if [ -z "$conflicts" ]; then
+              echo "No unresolved paths; treating as empty/already-applied cherry-pick"
+              git cherry-pick --skip || git cherry-pick --abort || true
+              continue
+            fi
+
+            echo "Conflict in $sha"
+            printf '%s\n' "$conflicts"
+            git status --short
+            git diff --cc --stat || true
+            git cherry-pick --abort
+            printf 'status=conflict\ncommit=%s\nconflicts:\n%s\n' "$sha" "$conflicts" > .github/upstream-6067-6090-status.txt
+            git add .github/upstream-6067-6090-status.txt
+            git commit -m "ci: record upstream 6067-6090 replay conflict"
+            git push origin HEAD:${GITHUB_REF_NAME}
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          done
+          echo "complete=true" >> "$GITHUB_OUTPUT"
+
+      - name: Finalize successful replay
+        if: steps.replay.outputs.complete == 'true'
+        run: |
+          printf 'status=complete\ntarget=04379b8f833983de90d0f5f5db7da3acfb3aa27a\n' > .github/upstream-6067-6090-status.txt
+          git add .github/upstream-6067-6090-status.txt
+          git rm .github/workflows/temp-upstream-6067-6090.yml
+          git commit -m "chore(upstream): record replay through #6090"
+          git push origin HEAD:${GITHUB_REF_NAME}
