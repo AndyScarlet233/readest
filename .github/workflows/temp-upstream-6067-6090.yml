@@ -29,14 +29,12 @@ jobs:
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
 
-      - name: Continue upstream replay from 6083
+      - name: Continue upstream replay from 6085
         id: replay
         shell: bash
         run: |
           set -euo pipefail
           commits=(
-            34e4ebeeb500ddf245c0fef0bb6b6cf19651b809
-            77e44eb92de25547a58f0b4c8b2e0b4f39c8d1a5
             44bba08f3dfa86a62e7fb39364abbbb864d9c261
             32c42100d06b8b086b1af2449f43a7738f5b54d9
             d13edf4efee3c9b975bb77a991806c7fd9f9b3d6
@@ -54,10 +52,11 @@ jobs:
             fi
 
             conflicts="$(git diff --name-only --diff-filter=U)"
-            if [ "$sha" = "34e4ebeeb500ddf245c0fef0bb6b6cf19651b809" ] && [ "$conflicts" = "nix/package.nix" ]; then
-              echo "Resolving #6083: upstream CEF Nix structure matches fork except stale dependency hashes"
-              git checkout --theirs -- nix/package.nix
-              git add nix/package.nix
+            if [ "$sha" = "44bba08f3dfa86a62e7fb39364abbbb864d9c261" ] && [ -n "$conflicts" ]; then
+              echo "Resolving #6085: keep fork PR workflow deletion and fork memory index; retain tao submodule removal"
+              git rm -f -- .github/workflows/pull-request.yml
+              git checkout --ours -- apps/readest-app/.claude/memory/MEMORY.md
+              git add apps/readest-app/.claude/memory/MEMORY.md
               git cherry-pick --continue
               continue
             fi
