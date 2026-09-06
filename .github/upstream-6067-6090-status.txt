@@ -1,5 +1,2 @@
-status=conflict
-commit=44bba08f3dfa86a62e7fb39364abbbb864d9c261
-conflicts:
-.github/workflows/pull-request.yml
-apps/readest-app/.claude/memory/MEMORY.md
+status=complete
+target=04379b8f833983de90d0f5f5db7da3acfb3aa27a
