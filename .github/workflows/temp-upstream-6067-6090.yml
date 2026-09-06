@@ -29,19 +29,12 @@ jobs:
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
 
-      - name: Continue upstream replay from 6069
+      - name: Continue upstream replay from 6074
         id: replay
         shell: bash
         run: |
           set -euo pipefail
           commits=(
-            e56d867fdf823dfb873f5cfcff25b685d61895e0
-            a268fd2f02170cfa9ea2384091065f636fa89096
-            d761570f0ab09d1fdccb63a668c1ef0f7d4d7189
-            ff97b337fbfddb6b794e8c64e4832dfccf24f3e7
-            9f1e6a7adba67ebbd363626385ef04a6f2eb0a5d
-            860d6d00bce306db2e2830bee729c059a61b526f
-            5bae2e37923f6498a4bd2b3c20f627ea947dea37
             655c72ad5a91a0fa42df95f11de3996cf7b3dfac
             3723c1625d3735745e76e8e0e1fdb4d59f059eda
             4918297fef1a8d6d129ff63b3ed2d7402b5fe1d9
@@ -65,10 +58,18 @@ jobs:
             fi
 
             conflicts="$(git diff --name-only --diff-filter=U)"
-            if [ "$sha" = "e56d867fdf823dfb873f5cfcff25b685d61895e0" ] && [ "$conflicts" = "nix/package.nix" ]; then
-              echo "Keeping fork Nix dependency hashes for #6069; final hashes will be regenerated after replay"
-              git checkout --ours -- nix/package.nix
-              git add nix/package.nix
+            if [ "$sha" = "655c72ad5a91a0fa42df95f11de3996cf7b3dfac" ] && [ -n "$conflicts" ]; then
+              echo "Resolving #6074: keep fork workflows/Nix, merge only CEF runtime genericity into hardened transfer layer"
+              git rm -f -- .github/workflows/nightly.yml .github/workflows/pull-request.yml
+              git checkout --ours -- \
+                .github/workflows/release.yml \
+                apps/readest-app/src-tauri/src/transfer_file.rs \
+                nix/package.nix
+              python3 .github/scripts/temp-resolve-upstream-6074.py
+              git add \
+                .github/workflows/release.yml \
+                apps/readest-app/src-tauri/src/transfer_file.rs \
+                nix/package.nix
               git cherry-pick --continue
               continue
             fi
@@ -100,5 +101,6 @@ jobs:
           git add .github/upstream-6067-6090-status.txt
           git rm .github/workflows/temp-upstream-6067-6090.yml
           git rm .github/scripts/temp-resolve-upstream-6067.py
+          git rm .github/scripts/temp-resolve-upstream-6074.py
           git commit -m "chore(upstream): record replay through #6090"
           git push origin HEAD:${GITHUB_REF_NAME}
