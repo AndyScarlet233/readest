@@ -290,7 +290,7 @@ fn is_path_within_root(root: &Path, path: &Path) -> bool {
 /// so retain a narrowly bounded fallback for files owned by this app. Portable
 /// installs additionally use the executable directory when its Settings.json
 /// marker is present. Canonicalization prevents symlink and prefix-bypass paths.
-fn is_within_app_storage(app: &AppHandle, file_path: &str) -> bool {
+fn is_within_app_storage<R: tauri::Runtime>(app: &AppHandle<R>, file_path: &str) -> bool {
     let path = Path::new(file_path);
     let mut roots = Vec::new();
     for root in [
@@ -326,8 +326,8 @@ fn is_within_app_storage(app: &AppHandle, file_path: &str) -> bool {
 /// grants for custom/external roots) or lives inside the app's own storage.
 /// Scope checks use the canonical path too, so a symlink/reparse point cannot
 /// turn an allowed lexical path into an outside target.
-pub(crate) fn ensure_path_allowed(
-    app: &AppHandle,
+pub(crate) fn ensure_path_allowed<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     file_path: &str,
 ) -> std::result::Result<(), Error> {
     if has_disallowed_components(file_path) {
@@ -719,8 +719,8 @@ async fn resumable_download(
 
 #[command]
 #[allow(clippy::too_many_arguments)] // Tauri command surface mirrors the JS caller's options.
-pub async fn download_file(
-    app: AppHandle,
+pub async fn download_file<R: tauri::Runtime>(
+    app: AppHandle<R>,
     url: &str,
     file_path: &str,
     headers: HashMap<String, String>,
@@ -897,8 +897,8 @@ pub async fn download_file(
 }
 
 #[command]
-pub async fn upload_file(
-    app: AppHandle,
+pub async fn upload_file<R: tauri::Runtime>(
+    app: AppHandle<R>,
     url: &str,
     file_path: &str,
     method: &str,

@@ -4,6 +4,28 @@ import { getAccessToken } from '@/utils/access';
 import { fetchWithTimeout } from '@/utils/fetch';
 
 const SYNC_API_ENDPOINT = getAPIBaseUrl() + '/sync';
+const SYNC_REQUEST_TIMEOUT_MS = 15000;
+const SYNC_RETRY_DELAYS_MS = [350, 900];
+const RETRYABLE_SYNC_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchSyncWithRetry = async (url: string, options: RequestInit): Promise<Response> => {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= SYNC_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(url, options, SYNC_REQUEST_TIMEOUT_MS);
+      if (!RETRYABLE_SYNC_STATUSES.has(response.status) || attempt === SYNC_RETRY_DELAYS_MS.length) {
+        return response;
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === SYNC_RETRY_DELAYS_MS.length) throw error;
+    }
+    await sleep(SYNC_RETRY_DELAYS_MS[attempt]!);
+  }
+  throw lastError instanceof Error ? lastError : new Error('Sync request failed');
+};
 
 export type SyncType = 'books' | 'configs' | 'notes' | 'stats';
 export type SyncOp = 'push' | 'pull' | 'both';
@@ -78,15 +100,11 @@ export class SyncClient {
         ? `&since_us=${encodeURIComponent(Math.trunc(sinceUs))}`
         : '';
     const url = `${SYNC_API_ENDPOINT}?since=${encodeURIComponent(since)}&type=${type ?? ''}&book=${book ?? ''}&meta_hash=${metaHash ?? ''}${limitParam}${sinceUsParam}`;
-    const res = await fetchWithTimeout(
-      url,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    const res = await fetchSyncWithRetry(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
       },
-      15000,
-    );
+    });
 
     if (!res.ok) {
       const error = await res.json();
@@ -98,24 +116,22 @@ export class SyncClient {
 
   /**
    * Push local changes to the server.
-   * Uses last-writer-wins logic as implemented on the server side.
+   * Uses last-writer-wins logic as implemented on the server side. Retrying
+   * the same payload is therefore safe and prevents brief network/server
+   * blips from surfacing as user-visible sync failures.
    */
   async pushChanges(payload: SyncData): Promise<SyncResult> {
     const token = await getAccessToken();
     if (!token) throw new Error('Not authenticated');
 
-    const res = await fetchWithTimeout(
-      SYNC_API_ENDPOINT,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
+    const res = await fetchSyncWithRetry(SYNC_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
-      15000,
-    );
+      body: JSON.stringify(payload),
+    });
 
     if (!res.ok) {
       const error = await res.json();
