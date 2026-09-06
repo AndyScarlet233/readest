@@ -1,0 +1,5 @@
+status=conflict
+commit=dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac
+conflicts:
+apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts
+apps/readest-app/src/services/constants.ts
