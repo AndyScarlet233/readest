@@ -29,14 +29,12 @@ jobs:
           git remote add official-upstream https://github.com/readest/readest.git || true
           git fetch --no-tags official-upstream main
 
-      - name: Replay only upstream commits after 6066
+      - name: Continue upstream replay from 6069
         id: replay
         shell: bash
         run: |
           set -euo pipefail
           commits=(
-            dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac
-            65287bd3eb1d2772c8880f9216b262d1daf0077e
             e56d867fdf823dfb873f5cfcff25b685d61895e0
             a268fd2f02170cfa9ea2384091065f636fa89096
             d761570f0ab09d1fdccb63a668c1ef0f7d4d7189
@@ -57,10 +55,6 @@ jobs:
           )
           rm -f .github/upstream-6067-6090-status.txt
           for sha in "${commits[@]}"; do
-            if git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
-              echo "Already present: $sha"
-              continue
-            fi
             echo "Replaying $sha"
             set +e
             git cherry-pick "$sha"
@@ -71,22 +65,16 @@ jobs:
             fi
 
             conflicts="$(git diff --name-only --diff-filter=U)"
-            if [ "$sha" = "dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac" ] && [ -n "$conflicts" ]; then
-              echo "Resolving #6067 against fork font zoom behavior"
-              git checkout --ours -- \
-                apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
-                apps/readest-app/src/services/constants.ts
-              python3 .github/scripts/temp-resolve-upstream-6067.py
-              git add \
-                apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
-                apps/readest-app/src/services/constants.ts \
-                apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx
+            if [ "$sha" = "e56d867fdf823dfb873f5cfcff25b685d61895e0" ] && [ "$conflicts" = "nix/package.nix" ]; then
+              echo "Keeping fork Nix dependency hashes for #6069; final hashes will be regenerated after replay"
+              git checkout --ours -- nix/package.nix
+              git add nix/package.nix
               git cherry-pick --continue
               continue
             fi
 
             if [ -z "$conflicts" ]; then
-              echo "No unresolved paths; treating as empty/already-applied cherry-pick"
+              echo "No unresolved paths; treating as empty cherry-pick"
               git cherry-pick --skip || git cherry-pick --abort || true
               continue
             fi
