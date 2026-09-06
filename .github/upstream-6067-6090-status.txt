@@ -1,4 +1,5 @@
 status=conflict
-commit=34e4ebeeb500ddf245c0fef0bb6b6cf19651b809
+commit=44bba08f3dfa86a62e7fb39364abbbb864d9c261
 conflicts:
-nix/package.nix
+.github/workflows/pull-request.yml
+apps/readest-app/.claude/memory/MEMORY.md
