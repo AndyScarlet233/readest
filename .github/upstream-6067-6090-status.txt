@@ -1,4 +1,8 @@
 status=conflict
-commit=e56d867fdf823dfb873f5cfcff25b685d61895e0
+commit=655c72ad5a91a0fa42df95f11de3996cf7b3dfac
 conflicts:
+.github/workflows/nightly.yml
+.github/workflows/pull-request.yml
+.github/workflows/release.yml
+apps/readest-app/src-tauri/src/transfer_file.rs
 nix/package.nix
