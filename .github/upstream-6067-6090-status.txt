@@ -1,8 +1,8 @@
 status=conflict
-commit=655c72ad5a91a0fa42df95f11de3996cf7b3dfac
+commit=ee86510ccaf736c2cf887add305c5344420ab0a3
 conflicts:
-.github/workflows/nightly.yml
-.github/workflows/pull-request.yml
-.github/workflows/release.yml
-apps/readest-app/src-tauri/src/transfer_file.rs
+.github/workflows/nix-deps-check.yml
+apps/readest-app/.claude/memory/MEMORY.md
+apps/readest-app/package.json
 nix/package.nix
+pnpm-lock.yaml
