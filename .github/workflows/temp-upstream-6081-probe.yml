@@ -15,13 +15,21 @@ jobs:
   replay:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout integration branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
 
       - name: Replay official commits after #6066 through #6081
         shell: bash
@@ -41,6 +49,20 @@ jobs:
           fi
           git merge-base --is-ancestor "$base" "$target"
 
+          assert_conflicts() {
+            local label="$1"
+            shift
+            local actual expected
+            actual="$(git diff --name-only --diff-filter=U | sort)"
+            expected="$(printf '%s\n' "$@" | sort)"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Unexpected $label conflict set"
+              echo "Actual:"; printf '%s\n' "$actual"
+              echo "Expected:"; printf '%s\n' "$expected"
+              exit 1
+            fi
+          }
+
           mapfile -t commits < <(git rev-list --reverse "$base..$target")
           echo "Replaying ${#commits[@]} commits:"
           for sha in "${commits[@]}"; do git log -1 --format='  %H %s' "$sha"; done
@@ -49,26 +71,28 @@ jobs:
             title="$(git log -1 --format=%s "$sha")"
             echo "::group::cherry-pick $sha $title"
             if ! git cherry-pick "$sha"; then
-              if [ "$sha" = "dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac" ]; then
-                conflicts="$(git diff --name-only --diff-filter=U | sort)"
-                expected="$(printf '%s\n' \
-                  'apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts' \
-                  'apps/readest-app/src/services/constants.ts' | sort)"
-                [ "$conflicts" = "$expected" ] || { echo "::error::Unexpected #6067 conflicts"; printf '%s\n' "$conflicts"; exit 1; }
-                git checkout --ours -- \
-                  apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
-                  apps/readest-app/src/services/constants.ts
-                python <<'PY'
+              case "$sha" in
+                dd9a8daa3f6e173d1f7dd7425e4fc71ee1c449ac)
+                  assert_conflicts '#6067' \
+                    apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
+                    apps/readest-app/src/services/constants.ts
+                  git checkout --ours -- \
+                    apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
+                    apps/readest-app/src/services/constants.ts
+                  python <<'PY'
           from pathlib import Path
           path = Path('apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts')
           text = path.read_text()
           old = "  const { setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
           new = "  const { settings, setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();"
-          if old in text: text = text.replace(old, new, 1)
-          elif new not in text: raise SystemExit('settings-store destructuring changed')
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('settings-store destructuring changed')
+
           start = text.index('  const zoomInFactor = (factor = 1.0) => {')
           end = text.index('  const zoomIn = () => {', start)
-          replacement = """  const applyShortcutFontSize = (fontSize: number) => {
+          text = text[:start] + """  const applyShortcutFontSize = (fontSize: number) => {
             if (!sideBarBookKey) return;
             const viewSettings = getViewSettings(sideBarBookKey);
             if (!viewSettings) return;
@@ -106,14 +130,15 @@ jobs:
             applyZoomLevel(Math.max(zoomLevel, MIN_ZOOM_LEVEL));
           };
 
-          """
-          text = text[:start] + replacement + text[end:]
+          """ + text[end:]
           text = text.replace(
               "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size);",
-              "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);", 1)
+              "saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);",
+              1,
+          )
           start = text.index('  const resetZoom = () => {')
           end = text.index('  const toggleToolbar = () => {', start)
-          replacement = """  const resetZoom = () => {
+          text = text[:start] + """  const resetZoom = () => {
             if (!sideBarBookKey) return;
             if (!getBookData(sideBarBookKey)?.isFixedLayout) {
               applyShortcutFontSize(
@@ -124,69 +149,60 @@ jobs:
             applyZoomLevel(100);
           };
 
-          """
-          text = text[:start] + replacement + text[end:]
+          """ + text[end:]
           path.write_text(text)
+
           test_path = Path('apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx')
           test = test_path.read_text()
           if 'FONT_SIZE_LIMITS:' not in test:
               marker = '  ZOOM_STEP: 10,\n'
-              if marker not in test: raise SystemExit('constants mock changed')
-              test = test.replace(marker, marker + '  FONT_SIZE_LIMITS: { MIN: 8, MAX: 120, DEFAULT: 16 },\n', 1)
+              if marker not in test:
+                  raise SystemExit('constants mock changed')
+              test = test.replace(
+                  marker,
+                  marker + '  FONT_SIZE_LIMITS: { MIN: 8, MAX: 120, DEFAULT: 16 },\n',
+                  1,
+              )
           test_path.write_text(test)
           PY
-                git add \
-                  apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
-                  apps/readest-app/src/services/constants.ts \
-                  apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx
-                GIT_EDITOR=true git cherry-pick --continue
-              elif [ "$sha" = "e56d867fdf823dfb873f5cfcff25b685d61895e0" ]; then
-                conflicts="$(git diff --name-only --diff-filter=U | sort)"
-                [ "$conflicts" = "nix/package.nix" ] || { echo "::error::Unexpected #6069 conflicts"; printf '%s\n' "$conflicts"; exit 1; }
-                git checkout --ours -- nix/package.nix
-                git add nix/package.nix
-                GIT_EDITOR=true git cherry-pick --continue
-              elif [ "$sha" = "655c72ad5a91a0fa42df95f11de3996cf7b3dfac" ]; then
-                conflicts="$(git diff --name-only --diff-filter=U | sort)"
-                expected="$(printf '%s\n' \
-                  '.github/workflows/nightly.yml' \
-                  '.github/workflows/pull-request.yml' \
-                  '.github/workflows/release.yml' \
-                  'apps/readest-app/src-tauri/src/transfer_file.rs' \
-                  'nix/package.nix' | sort)"
-                [ "$conflicts" = "$expected" ] || { echo "::error::Unexpected #6074 conflicts"; printf '%s\n' "$conflicts"; exit 1; }
+                  git add \
+                    apps/readest-app/src/app/reader/hooks/useBookShortcuts.ts \
+                    apps/readest-app/src/services/constants.ts \
+                    apps/readest-app/src/__tests__/components/useBookShortcuts.test.tsx
+                  GIT_EDITOR=true git cherry-pick --continue
+                  ;;
 
-                # Fork intentionally does not carry upstream nightly/pull-request
-                # workflows. Do not resurrect them.
-                git rm -f .github/workflows/nightly.yml .github/workflows/pull-request.yml
+                e56d867fdf823dfb873f5cfcff25b685d61895e0)
+                  assert_conflicts '#6069' nix/package.nix
+                  git checkout --ours -- nix/package.nix
+                  git add nix/package.nix
+                  GIT_EDITOR=true git cherry-pick --continue
+                  ;;
 
-                # Fork release freezes one main SHA and publishes Windows/Android;
-                # it has no Linux leg. Preserve it byte-for-byte rather than
-                # importing upstream's Linux tauri-action rewrite.
-                git checkout --ours -- .github/workflows/release.yml
-                git add .github/workflows/release.yml
+                655c72ad5a91a0fa42df95f11de3996cf7b3dfac)
+                  assert_conflicts '#6074' \
+                    .github/workflows/nightly.yml \
+                    .github/workflows/pull-request.yml \
+                    .github/workflows/release.yml \
+                    apps/readest-app/src-tauri/src/transfer_file.rs \
+                    nix/package.nix
 
-                # Keep the fork's hardened path checks and file-transfer behavior;
-                # #6074 only needs Runtime generics so the same commands work on
-                # Wry and CEF.
-                git checkout --ours -- apps/readest-app/src-tauri/src/transfer_file.rs
-                python <<'PY'
+                  git rm -f .github/workflows/nightly.yml .github/workflows/pull-request.yml
+                  git checkout --ours -- .github/workflows/release.yml
+                  git add .github/workflows/release.yml
+
+                  git checkout --ours -- apps/readest-app/src-tauri/src/transfer_file.rs
+                  python <<'PY'
           from pathlib import Path
           path = Path('apps/readest-app/src-tauri/src/transfer_file.rs')
           text = path.read_text()
           replacements = [
-              (
-                  'pub(crate) fn ensure_path_allowed(\n    app: &AppHandle,\n',
-                  'pub(crate) fn ensure_path_allowed<R: tauri::Runtime>(\n    app: &AppHandle<R>,\n',
-              ),
-              (
-                  'pub async fn download_file(\n    app: AppHandle,\n',
-                  'pub async fn download_file<R: tauri::Runtime>(\n    app: AppHandle<R>,\n',
-              ),
-              (
-                  'pub async fn upload_file(\n    app: AppHandle,\n',
-                  'pub async fn upload_file<R: tauri::Runtime>(\n    app: AppHandle<R>,\n',
-              ),
+              ('pub(crate) fn ensure_path_allowed(\n    app: &AppHandle,\n',
+               'pub(crate) fn ensure_path_allowed<R: tauri::Runtime>(\n    app: &AppHandle<R>,\n'),
+              ('pub async fn download_file(\n    app: AppHandle,\n',
+               'pub async fn download_file<R: tauri::Runtime>(\n    app: AppHandle<R>,\n'),
+              ('pub async fn upload_file(\n    app: AppHandle,\n',
+               'pub async fn upload_file<R: tauri::Runtime>(\n    app: AppHandle<R>,\n'),
           ]
           for old, new in replacements:
               if old not in text:
@@ -194,44 +210,129 @@ jobs:
               text = text.replace(old, new, 1)
           path.write_text(text)
           PY
-                git add apps/readest-app/src-tauri/src/transfer_file.rs
+                  git add apps/readest-app/src-tauri/src/transfer_file.rs
+                  git checkout --ours -- nix/package.nix
+                  git add nix/package.nix
+                  rm -rf packages/tauri-plugins
+                  GIT_EDITOR=true git cherry-pick --continue
 
-                # Both pnpm/cargo hashes are fork-tree-specific. Keep current values
-                # during replay and regenerate them after #6081 settles the locks.
-                git checkout --ours -- nix/package.nix
-                git add nix/package.nix
+                  grep -q '"localsend_send_files"' apps/readest-app/src-tauri/build.rs
+                  grep -q '"lan_sync_start"' apps/readest-app/src-tauri/build.rs
+                  grep -q '"iap_purchase_product"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+                  grep -q '"icloud_container_status"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+                  grep -q '"set_multicast_lock"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+                  grep -q '"set_sync_passphrase"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+                  test -f apps/readest-app/src-tauri/tauri.fork.conf.json
+                  git diff --exit-code origin/main -- .github/workflows/release.yml
+                  ;;
 
-                # The removed tauri-plugins gitlink was identical in fork and
-                # upstream before #6074. CEF requires dropping the local fs patch
-                # to avoid native links clashes; remove the checked-out residue too.
-                rm -rf packages/tauri-plugins
+                ee86510ccaf736c2cf887add305c5344420ab0a3)
+                  assert_conflicts '#6081' \
+                    .github/workflows/nix-deps-check.yml \
+                    apps/readest-app/.claude/memory/MEMORY.md \
+                    apps/readest-app/package.json \
+                    nix/package.nix \
+                    pnpm-lock.yaml
 
-                GIT_EDITOR=true git cherry-pick --continue
+                  # The fork intentionally omits upstream's Nix PR workflow.
+                  git rm -f .github/workflows/nix-deps-check.yml
 
-                # Safety assertions: generated ACL files may disappear, but their
-                # authoritative command manifests must retain every fork-only
-                # surface plus upstream's new sync-passphrase commands.
-                grep -q '"localsend_send_files"' apps/readest-app/src-tauri/build.rs
-                grep -q '"lan_sync_start"' apps/readest-app/src-tauri/build.rs
-                grep -q '"iap_purchase_product"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                grep -q '"icloud_container_status"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                grep -q '"set_multicast_lock"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                grep -q '"set_sync_passphrase"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
-                test -f apps/readest-app/src-tauri/tauri.fork.conf.json
-                git diff --exit-code origin/main -- .github/workflows/release.yml
-              else
-                echo "::error::Conflict while replaying $sha $title"
-                echo "Conflicted files:"
-                git diff --name-only --diff-filter=U || true
-                echo "Status:"
-                git status --short || true
-                git cherry-pick --abort || true
-                exit 1
-              fi
+                  # Preserve fork-specific agent memory/index entries, then add a
+                  # compact index for the new upstream memories rather than
+                  # replacing the whole fork index.
+                  git checkout --ours -- apps/readest-app/.claude/memory/MEMORY.md
+                  python <<'PY'
+          from pathlib import Path
+          path = Path('apps/readest-app/.claude/memory/MEMORY.md')
+          text = path.read_text()
+          notes = [
+              ('tauri-fork-bump-workspace-exclude-swift-rs.md', '- [Tauri 2.11.5 fork bump](tauri-fork-bump-workspace-exclude-swift-rs.md) workspace exclude + swift-rs relabel; tao 0.37 carries prior iOS scene fixes'),
+              ('fixed-layout-missing-primaryindex-tts-6071.md', '- [#6071 fixed-layout/PDF TTS relocation](fixed-layout-missing-primaryindex-tts-6071.md)'),
+              ('read-aloud-selection-onetime-5011.md', '- [#5011 read aloud selection](read-aloud-selection-onetime-5011.md)'),
+              ('overlayer-blend-mode-follows-page-not-theme-5790.md', '- [#5790/#5930/#5943 PDF highlight blend mode](overlayer-blend-mode-follows-page-not-theme-5790.md)'),
+              ('annotation-popup-fixed-wrapper-offset-6036.md', '- [#6036 annotation popup fixed-wrapper offset](annotation-popup-fixed-wrapper-offset-6036.md)'),
+              ('zoom-shortcuts-reflowable-font-size-5694.md', '- [#5694 reflowable zoom shortcuts](zoom-shortcuts-reflowable-font-size-5694.md)'),
+          ]
+          missing = [line for filename, line in notes if filename not in text]
+          if missing:
+              text = text.rstrip() + '\n\n## Upstream replay notes\n' + '\n'.join(missing) + '\n'
+          path.write_text(text)
+          PY
+
+                  # Start from the fork manifest (which includes barcode-scanner
+                  # and other fork dependencies) and apply only the upstream
+                  # Tauri plugin version bumps.
+                  git checkout --ours -- apps/readest-app/package.json
+                  python <<'PY'
+          from pathlib import Path
+          path = Path('apps/readest-app/package.json')
+          text = path.read_text()
+          bumps = {
+              '"@tauri-apps/plugin-biometric": "^2.3.2"': '"@tauri-apps/plugin-biometric": "^2.3.3"',
+              '"@tauri-apps/plugin-clipboard-manager": "^2.3.0"': '"@tauri-apps/plugin-clipboard-manager": "^2.3.3"',
+              '"@tauri-apps/plugin-deep-link": "^2.4.7"': '"@tauri-apps/plugin-deep-link": "^2.4.10"',
+              '"@tauri-apps/plugin-dialog": "^2.6.0"': '"@tauri-apps/plugin-dialog": "^2.7.3"',
+              '"@tauri-apps/plugin-fs": "^2.4.5"': '"@tauri-apps/plugin-fs": "^2.5.2"',
+              '"@tauri-apps/plugin-haptics": "^2.3.2"': '"@tauri-apps/plugin-haptics": "^2.3.3"',
+              '"@tauri-apps/plugin-http": "^2.5.7"': '"@tauri-apps/plugin-http": "^2.6.0"',
+              '"@tauri-apps/plugin-log": "^2.8.0"': '"@tauri-apps/plugin-log": "^2.9.1"',
+              '"@tauri-apps/plugin-opener": "^2.5.3"': '"@tauri-apps/plugin-opener": "^2.5.5"',
+              '"@tauri-apps/plugin-shell": "~2.3.5"': '"@tauri-apps/plugin-shell": "~2.3.6"',
+              '"@tauri-apps/plugin-updater": "^2.10.0"': '"@tauri-apps/plugin-updater": "^2.11.0"',
+              '"@tauri-apps/plugin-websocket": "~2.4.2"': '"@tauri-apps/plugin-websocket": "~2.4.3"',
+          }
+          for old, new in bumps.items():
+              if old not in text:
+                  raise SystemExit(f'expected package entry missing: {old}')
+              text = text.replace(old, new, 1)
+          if '"@tauri-apps/plugin-barcode-scanner"' not in text:
+              raise SystemExit('fork barcode-scanner dependency was lost')
+          path.write_text(text)
+          PY
+
+                  # Resolve the lock from the merged fork manifest; never take the
+                  # upstream lock wholesale because the fork has extra deps.
+                  git checkout --ours -- pnpm-lock.yaml nix/package.nix
+                  git add \
+                    apps/readest-app/.claude/memory/MEMORY.md \
+                    apps/readest-app/package.json \
+                    nix/package.nix
+                  pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts
+                  git add pnpm-lock.yaml
+                  GIT_EDITOR=true git cherry-pick --continue
+
+                  # Materialize the newly pinned submodules and verify the fork's
+                  # Tauri/path/runtime architecture survived the bump.
+                  git submodule sync --recursive
+                  git submodule update --init --recursive
+                  grep -q '"@tauri-apps/plugin-fs": "^2.5.2"' apps/readest-app/package.json
+                  grep -q '"@tauri-apps/plugin-barcode-scanner"' apps/readest-app/package.json
+                  grep -q '"localsend_send_files"' apps/readest-app/src-tauri/build.rs
+                  grep -q '"iap_purchase_product"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+                  grep -q '"set_sync_passphrase"' apps/readest-app/src-tauri/plugins/tauri-plugin-native-bridge/build.rs
+                  ! grep -q '^tao = { path = "packages/tao" }' Cargo.toml
+                  git ls-tree HEAD packages/tauri | grep -q 3156d92b7f0299f71119c127321bee14df71f2cc
+                  test -f apps/readest-app/src-tauri/tauri.fork.conf.json
+                  git diff --exit-code origin/main -- .github/workflows/release.yml
+                  ;;
+
+                *)
+                  echo "::error::Conflict while replaying $sha $title"
+                  echo "Conflicted files:"
+                  git diff --name-only --diff-filter=U || true
+                  echo "Status:"
+                  git status --short || true
+                  git cherry-pick --abort || true
+                  exit 1
+                  ;;
+              esac
             fi
             echo "::endgroup::"
           done
 
+          echo "Final status before push:"
+          git status --short
+          test -z "$(git status --porcelain)"
           echo "Changed files relative to fork main:"
           git diff --name-status origin/main...HEAD
           HUSKY=0 git push origin HEAD:${GITHUB_REF_NAME}
