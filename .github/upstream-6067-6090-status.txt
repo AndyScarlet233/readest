@@ -1,8 +1,4 @@
 status=conflict
-commit=ee86510ccaf736c2cf887add305c5344420ab0a3
+commit=34e4ebeeb500ddf245c0fef0bb6b6cf19651b809
 conflicts:
-.github/workflows/nix-deps-check.yml
-apps/readest-app/.claude/memory/MEMORY.md
-apps/readest-app/package.json
 nix/package.nix
-pnpm-lock.yaml
