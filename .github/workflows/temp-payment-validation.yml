@@ -30,6 +30,9 @@ jobs:
           test "$(git rev-parse origin/main)" = "6c1e16e5cc55b188a9ccbc2f3a2a6c956f7f997f"
           git merge --no-edit origin/main
           git merge-base --is-ancestor 6c1e16e5cc55b188a9ccbc2f3a2a6c956f7f997f HEAD
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          test "$(git -C packages/tauri rev-parse HEAD)" = "$(git ls-tree HEAD packages/tauri | awk '{print $3}')"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
