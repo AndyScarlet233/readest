@@ -34,6 +34,19 @@ jobs:
           git submodule update --init --recursive
           test "$(git -C packages/tauri rev-parse HEAD)" = "$(git ls-tree HEAD packages/tauri | awk '{print $3}')"
 
+      - name: Verify tracked Android scaffold
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest='apps/readest-app/src-tauri/gen/android/app/src/main/AndroidManifest.xml'
+          test -f "$manifest"
+          test -f apps/readest-app/src-tauri/gen/android/app/build.gradle.kts
+          test "$(grep -c 'android.intent.action.MEDIA_BUTTON' "$manifest")" -eq 1
+          grep -q 'androidx.media.session.MediaButtonReceiver' "$manifest"
+          grep -q 'com.readest.native_tts.MediaPlaybackService' "$manifest"
+          grep -q 'com.android.vending.BILLING' "$manifest"
+          git diff --exit-code -- apps/readest-app/src-tauri/gen/android
+
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
@@ -92,50 +105,29 @@ jobs:
           const lines = fs.readFileSync(path, 'utf8').split('\n');
           const needle = 'single: () => Promise.resolve({ data: state.paymentRow ?? null }),';
           const matches = lines.flatMap((line, index) => (line.includes(needle) ? [index] : []));
-          if (matches.length !== 1) {
-            throw new Error(`expected exactly one paymentRow single fixture, found ${matches.length}`);
-          }
+          if (matches.length !== 1) throw new Error(`expected exactly one paymentRow single fixture, found ${matches.length}`);
           const singleIndex = matches[0];
           const selectIndex = singleIndex - 2;
           const expected = [
-            'select: () => ({',
-            'eq: () => ({',
-            needle,
-            'in: () => Promise.resolve({ data: state.completedPayments ?? [] }),',
-            '}),',
-            '}),',
+            'select: () => ({', 'eq: () => ({', needle,
+            'in: () => Promise.resolve({ data: state.completedPayments ?? [] }),', '}),', '}),',
           ];
           const actual = lines.slice(selectIndex, selectIndex + expected.length).map((line) => line.trim());
-          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-            throw new Error(`payments select fixture shape changed: ${JSON.stringify(actual)}`);
-          }
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`payments select fixture shape changed: ${JSON.stringify(actual)}`);
           const indent = lines[selectIndex].match(/^\s*/)?.[0] ?? '';
-          const i1 = `${indent}  `;
-          const i2 = `${indent}    `;
-          const i3 = `${indent}      `;
-          lines.splice(
-            selectIndex,
-            expected.length,
-            `${indent}select: (columns?: string) => ({`,
-            `${i1}eq: () => ({`,
-            `${i2}single: () =>`,
-            `${i3}Promise.resolve({`,
-            `${i3}  data:`,
+          const i1 = `${indent}  `, i2 = `${indent}    `, i3 = `${indent}      `;
+          lines.splice(selectIndex, expected.length,
+            `${indent}select: (columns?: string) => ({`, `${i1}eq: () => ({`, `${i2}single: () =>`,
+            `${i3}Promise.resolve({`, `${i3}  data:`,
             `${i3}    columns === 'user_id' && state.existingPaymentOwner !== undefined`,
-            `${i3}      ? { user_id: state.existingPaymentOwner }`,
-            `${i3}      : (state.paymentRow ?? null),`,
-            `${i3}  error: null,`,
-            `${i3}}),`,
-            `${i2}in: () => Promise.resolve({ data: state.completedPayments ?? [] }),`,
-            `${i1}}),`,
-            `${indent}}),`,
-          );
+            `${i3}      ? { user_id: state.existingPaymentOwner }`, `${i3}      : (state.paymentRow ?? null),`,
+            `${i3}  error: null,`, `${i3}}),`,
+            `${i2}in: () => Promise.resolve({ data: state.completedPayments ?? [] }),`, `${i1}}),`, `${indent}}),`);
           fs.writeFileSync(path, lines.join('\n'));
           NODE
           git diff --check
           file='apps/readest-app/src/__tests__/libs/payment/apple-notifications.test.ts'
           changed=$(git diff --numstat -- "$file" | awk '{print $1+$2}')
-          echo "Apple fixture changed lines: $changed"
           test -n "$changed"
           test "$changed" -le 20
 
@@ -154,12 +146,6 @@ jobs:
             src/__tests__/libs/payment/apple-payment-ownership-race.test.ts \
             src/__tests__/libs/payment/purchased-features.test.ts \
             --maxWorkers=2
-
-      - name: Regenerate Android scaffolding
-        run: |
-          cd apps/readest-app
-          rm -rf src-tauri/gen/android
-          pnpm tauri android init
 
       - name: Build Google Play Android debug app through Tauri
         env:
