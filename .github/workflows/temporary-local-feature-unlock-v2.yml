@@ -1,0 +1,98 @@
+name: Temporary local feature unlock v2
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply selective fork unlocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          access='apps/readest-app/src/utils/access.ts'
+          cloud='apps/readest-app/src/__tests__/components/settings/cloudSync.test.ts'
+          tts='apps/readest-app/src/__tests__/utils/tts-cache-plan-gate.test.ts'
+          nearby='apps/readest-app/src/__tests__/utils/nearby-pairing-plan-gate.test.ts'
+
+          grep -qx 'export const CLOUD_SYNC_REQUIRES_PREMIUM = true;' "$access"
+          grep -qx 'export const TTS_CACHE_REQUIRES_PREMIUM = true;' "$access"
+          grep -qx 'export const NEARBY_PAIRING_REQUIRES_PREMIUM = true;' "$access"
+          sed -i 's/export const CLOUD_SYNC_REQUIRES_PREMIUM = true;/export const CLOUD_SYNC_REQUIRES_PREMIUM = false;/' "$access"
+          sed -i 's/export const TTS_CACHE_REQUIRES_PREMIUM = true;/export const TTS_CACHE_REQUIRES_PREMIUM = false;/' "$access"
+          sed -i 's/export const NEARBY_PAIRING_REQUIRES_PREMIUM = true;/export const NEARBY_PAIRING_REQUIRES_PREMIUM = false;/' "$access"
+
+          sed -i "s/isCloudSyncAllowed (premium paywall)/isCloudSyncAllowed (fork local-resource policy)/" "$cloud"
+          sed -i "s/third-party cloud sync requires a paid plan/third-party cloud sync is available on every plan/" "$cloud"
+          sed -i 's/expect(CLOUD_SYNC_REQUIRES_PREMIUM).toBe(true);/expect(CLOUD_SYNC_REQUIRES_PREMIUM).toBe(false);/' "$cloud"
+          sed -i "s/expect(isCloudSyncAllowed('free', false)).toBe(false);/expect(isCloudSyncAllowed('free', false)).toBe(true);/" "$cloud"
+          sed -i "s/expect(isCloudSyncAllowed('purchase', false)).toBe(false);/expect(isCloudSyncAllowed('purchase', false)).toBe(true);/g" "$cloud"
+          sed -i "s/does not entitle a storage-only buyer after the grace period/fork unlock also entitles a storage-only buyer for third-party sync/" "$cloud"
+
+          sed -i "s/isTTSCacheAllowed (premium paywall)/isTTSCacheAllowed (fork local-resource policy)/" "$tts"
+          sed -i "s/downloading TTS audio for offline playback requires a paid plan/downloading TTS audio for offline playback is available on every plan/" "$tts"
+          sed -i 's/expect(TTS_CACHE_REQUIRES_PREMIUM).toBe(true);/expect(TTS_CACHE_REQUIRES_PREMIUM).toBe(false);/' "$tts"
+          sed -i "s/expect(isTTSCacheAllowed('free', false)).toBe(false);/expect(isTTSCacheAllowed('free', false)).toBe(true);/" "$tts"
+          sed -i "s/expect(isTTSCacheAllowed('purchase', false)).toBe(false);/expect(isTTSCacheAllowed('purchase', false)).toBe(true);/g" "$tts"
+          sed -i "s/does not entitle a storage-only buyer after the grace period/fork unlock also entitles a storage-only buyer for local TTS cache/" "$tts"
+
+          sed -i "s/isNearbyPairingAllowed (premium paywall)/isNearbyPairingAllowed (fork local-resource policy)/" "$nearby"
+          sed -i "s/pairing for confirmation-free drops requires a paid plan/confirmation-free local pairing is available on every plan/" "$nearby"
+          sed -i 's/expect(NEARBY_PAIRING_REQUIRES_PREMIUM).toBe(true);/expect(NEARBY_PAIRING_REQUIRES_PREMIUM).toBe(false);/' "$nearby"
+          sed -i "s/expect(isNearbyPairingAllowed('free', false)).toBe(false);/expect(isNearbyPairingAllowed('free', false)).toBe(true);/" "$nearby"
+          sed -i "s/expect(isNearbyPairingAllowed('purchase', false)).toBe(false);/expect(isNearbyPairingAllowed('purchase', false)).toBe(true);/" "$nearby"
+
+          cat > apps/readest-app/src/__tests__/utils/fork-local-unlock-boundary.test.ts <<'EOF'
+          import { describe, expect, test } from 'vitest';
+
+          import {
+            isCloudSyncAllowed,
+            isCustomizationAllowed,
+            isEmailInPlan,
+            isNearbyPairingAllowed,
+            isTTSCacheAllowed,
+          } from '@/utils/access';
+
+          describe('fork local feature unlock boundary', () => {
+            test('unlocks only client-side or user-owned-resource premium features', () => {
+              expect(isCloudSyncAllowed('free', false)).toBe(true);
+              expect(isTTSCacheAllowed('free', false)).toBe(true);
+              expect(isNearbyPairingAllowed('free', false)).toBe(true);
+            });
+
+            test('does not globally forge premium entitlement or unlock server-backed email-in', () => {
+              expect(isCustomizationAllowed('free', false)).toBe(false);
+              expect(isEmailInPlan('free', false)).toBe(false);
+            });
+          });
+          EOF
+
+          git diff --check
+          grep -qx 'export const CLOUD_SYNC_REQUIRES_PREMIUM = false;' "$access"
+          grep -qx 'export const TTS_CACHE_REQUIRES_PREMIUM = false;' "$access"
+          grep -qx 'export const NEARBY_PAIRING_REQUIRES_PREMIUM = false;' "$access"
+          grep -Fq "expect(isEmailInPlan('free', false)).toBe(false);" apps/readest-app/src/__tests__/utils/fork-local-unlock-boundary.test.ts
+
+      - name: Commit selective unlocks
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/readest-app/src/utils/access.ts \
+            apps/readest-app/src/__tests__/components/settings/cloudSync.test.ts \
+            apps/readest-app/src/__tests__/utils/tts-cache-plan-gate.test.ts \
+            apps/readest-app/src/__tests__/utils/nearby-pairing-plan-gate.test.ts \
+            apps/readest-app/src/__tests__/utils/fork-local-unlock-boundary.test.ts
+          git commit -m 'feat: unlock local and user-owned premium features'
+          git push origin HEAD:main
