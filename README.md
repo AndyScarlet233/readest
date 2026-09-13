@@ -3,6 +3,9 @@
     <img src="https://github.com/readest/readest/blob/main/apps/readest-app/src-tauri/icons/icon.png?raw=true" alt="Readest Logo" width="20%" />
   </a>
   <h1>Readest</h1>
+<p align="center">
+  <strong>English</strong> | <a href="./README.zh-CN.md">简体中文</a>
+</p>
   <br>
 
 [Readest][link-website] is an open-source ebook reader designed for immersive and deep reading experiences. Built as a modern rewrite of [Foliate](https://github.com/johnfactotum/foliate), it leverages [Next.js 16](https://github.com/vercel/next.js) and [Tauri v2](https://github.com/tauri-apps/tauri) to deliver a smooth, cross-platform experience across macOS, Windows, Linux, Android, iOS, and the Web.
@@ -42,21 +45,21 @@
   </a>
 </div>
 
-## 本分支版本下载
+## Fork Releases
 
-本仓库提供两条不同的发布路线。它们都基于 Readest 开源代码，但侧重点不同，请按自己的需求选择。
+This repository maintains two Readest-based release tracks with different goals. Choose the one that best fits how you want to use the app.
 
-### 0.12.8-fork.1 — 跟进上游 / 解锁非云端付费功能
+### 0.12.8-fork.1 — Upstream tracking / local premium gates unlocked
 
-[下载 0.12.8-fork.1](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.8-fork.1)
+[Download 0.12.8-fork.1](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.8-fork.1)
 
-基于官方 Readest 0.12.8。保留新版上游功能与后续同步能力，并解除 WebDAV、Google Drive、S3、OneDrive 等第三方同步、TTS 离线缓存以及 Nearby BookDrop 可信设备配对等不依赖官方服务器资源的 Premium 限制。Readest Cloud 存储空间、服务器翻译额度、Send to Readest 邮件等需要官方云端资源的功能仍按原规则工作。此版本是目前主要维护路线。
+Based on official Readest 0.12.8. This is the primary maintained track: it follows upstream changes while removing Premium restrictions from features that use local resources or storage services supplied by the user, including WebDAV, Google Drive, S3, OneDrive, offline TTS caching, and trusted-device pairing for Nearby BookDrop. Features that consume official Readest server resources, including Readest Cloud storage, server-side translation quota, and Send to Readest by email, continue to follow the upstream rules.
 
-### v0.12.6.22 — 完整局域网书籍同步版 / 暂停开发
+### v0.12.6.22 — Full LAN book sync / development paused
 
-[下载 v0.12.6.22](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.6.22)
+[Download v0.12.6.22](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.6.22)
 
-这是 0.12.6 系列最后一个公开版本，包含一套完整的局域网书籍同步机制，适合希望在自己的设备之间直接同步书籍的用户。由于这套机制涉及较多底层同步改动，跟随上游持续更新时适配成本较高，目前暂停继续开发。现有版本与 Release 会继续保留，方便需要这套局域网同步方案的用户使用。
+This is the final public release of the 0.12.6 line. It contains a complete LAN book-sync implementation for users who want direct book transfer and synchronization between their own devices. Because this subsystem requires deeper synchronization changes and is expensive to keep rebasing onto upstream, active development is currently paused. The release remains available for users who still need that workflow.
 
 ## Features
 
