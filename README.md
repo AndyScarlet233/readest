@@ -3,6 +3,9 @@
     <img src="https://github.com/readest/readest/blob/main/apps/readest-app/src-tauri/icons/icon.png?raw=true" alt="Readest Logo" width="20%" />
   </a>
   <h1>Readest</h1>
+<p align="center">
+  <strong>English</strong> | <a href="./README.zh-CN.md">简体中文</a>
+</p>
   <br>
 
 [Readest][link-website] is an open-source ebook reader designed for immersive and deep reading experiences. Built as a modern rewrite of [Foliate](https://github.com/johnfactotum/foliate), it leverages [Next.js 16](https://github.com/vercel/next.js) and [Tauri v2](https://github.com/tauri-apps/tauri) to deliver a smooth, cross-platform experience across macOS, Windows, Linux, Android, iOS, and the Web.
@@ -41,6 +44,22 @@
     <img src="./data/screenshots/landing_all_platforms.png" alt="Readest Banner" width="100%" />
   </a>
 </div>
+
+## Fork Releases
+
+This repository maintains two Readest-based release tracks with different goals. Choose the one that best fits how you want to use the app.
+
+### 0.12.8-fork.1 — Upstream tracking / local premium gates unlocked
+
+[Download 0.12.8-fork.1](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.8-fork.1)
+
+Based on official Readest 0.12.8. This is the primary maintained track: it follows upstream changes while removing Premium restrictions from features that use local resources or storage services supplied by the user, including WebDAV, Google Drive, S3, OneDrive, offline TTS caching, and trusted-device pairing for Nearby BookDrop. Features that consume official Readest server resources, including Readest Cloud storage, server-side translation quota, and Send to Readest by email, continue to follow the upstream rules.
+
+### v0.12.6.22 — Full LAN book sync / development paused
+
+[Download v0.12.6.22](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.6.22)
+
+This is the final public release of the 0.12.6 line. It contains a complete LAN book-sync implementation for users who want direct book transfer and synchronization between their own devices. Because this subsystem requires deeper synchronization changes and is expensive to keep rebasing onto upstream, active development is currently paused. The release remains available for users who still need that workflow.
 
 ## Features
 
