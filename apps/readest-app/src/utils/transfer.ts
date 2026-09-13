@@ -212,6 +212,12 @@ export const tauriDownload = async (
     onProgress.onmessage = progressHandler;
   }
 
+  // Reliability-first default for native cloud/LAN transfers. The Rust
+  // multipart downloader historically swallowed individual range failures and
+  // could report success with a sparse/partial file. A single streaming GET is
+  // still constant-memory and works for very large books; callers that have a
+  // backend with verified range semantics can explicitly opt back into the
+  // multipart path with `false`.
   const responseHeaders = await invoke<Record<string, string>>('download_file', {
     id,
     url,
@@ -219,7 +225,7 @@ export const tauriDownload = async (
     headers: headers ?? {},
     onProgress,
     body,
-    singleThreaded,
+    singleThreaded: singleThreaded ?? true,
     skipSslVerification,
   });
   return responseHeaders;
