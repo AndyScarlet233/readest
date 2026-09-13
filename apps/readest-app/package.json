@@ -1,6 +1,6 @@
 {
   "name": "@readest/readest-app",
-  "version": "0.12.8",
+  "version": "0.12.8-fork.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -180,7 +180,7 @@
     "i18next": "^24.2.0",
     "i18next-browser-languagedetector": "^8.0.2",
     "i18next-http-backend": "^3.0.5",
-    "iso-639-2": "^3.0.2",
+    "iso-639-2": "^3.0.1",
     "iso-639-3": "^3.0.1",
     "isomorphic-ws": "^5.0.0",
     "jieba-wasm": "^2.4.0",
