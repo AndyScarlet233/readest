@@ -20,13 +20,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PACKAGE_JSON = os.path.join(HERE, os.pardir, 'readest-app', 'package.json')
 INIT_PY = os.path.join(HERE, '__init__.py')
 PATTERN = re.compile(r'^PLUGIN_VERSION = \((\d+), (\d+), (\d+)\)', re.MULTILINE)
+SEMVER_CORE = re.compile(r'^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$')
 
 
 def app_version(path=PACKAGE_JSON):
-    """(major, minor, patch) from the app's package.json."""
+    """(major, minor, patch) from the app's SemVer package version."""
     with open(path, encoding='utf-8') as handle:
         raw = json.load(handle)['version']
-    return tuple(int(part) for part in raw.split('.')[:3])
+    match = SEMVER_CORE.fullmatch(raw)
+    if not match:
+        raise ValueError(f'Unsupported app version: {raw!r}')
+    return tuple(int(part) for part in match.groups())
 
 
 def plugin_version(path=INIT_PY):
