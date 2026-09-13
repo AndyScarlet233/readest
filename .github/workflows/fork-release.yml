@@ -115,13 +115,19 @@ jobs:
         shell: bash
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           cd apps/readest-app
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.bundle.createUpdaterArtifacts = false;
+          config.plugins.updater.endpoints = [
+            'https://github.com/AndyScarlet233/readest/releases/latest/download/latest.json',
+          ];
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
           pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: upload Windows installer to Release
@@ -141,6 +147,7 @@ jobs:
 
   android:
     name: Android arm64 APK
+    if: github.event_name != 'push'
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -252,6 +259,7 @@ jobs:
 
   cleanup:
     name: Keep only install packages
+    if: always() && needs.prepare.result == 'success' && needs.windows.result == 'success' && (needs.android.result == 'success' || needs.android.result == 'skipped')
     needs: [prepare, windows, android]
     runs-on: ubuntu-latest
     steps:
