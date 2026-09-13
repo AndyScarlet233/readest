@@ -432,6 +432,20 @@
     max-width: calc(100vw - 32px);
   }
 
+  /* Keep the book menu's width stable while nested sync actions expand. A
+     linked Hardcover title is intentionally truncated inside its row; letting
+     that title set the menu's intrinsic width also leaves stale hover paint in
+     macOS WebKit when the pointer moves across the resized rows (#5973). */
+  :where(.book-menu) {
+    width: 18rem;
+    max-width: calc(100vw - 2rem);
+  }
+
+  :where(.book-menu details > ul) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .dropdown-content::before,
   .dropdown-content::after {
     content: '';
@@ -990,6 +1004,24 @@
     display: none;
   }
 
+  /* Virtuoso owns the scroller inside every OverlayScrollbars root we set up
+     (bookshelf, TOC, book notes) and gives it `overflow-y: auto` inline, so the
+     platform scrollbar paints for as long as OverlayScrollbars' deferred init
+     takes — then vanishes when OS marks the same element
+     `data-overlayscrollbars-viewport="scrollbarHidden ..."`, widening the
+     content by the scrollbar's width and shifting the whole grid. OS ships
+     hiding rules for `[data-overlayscrollbars-initialize]`, but that attribute
+     sits on the root we hand it, never on the child that actually scrolls.
+     Hide it there too, until OS takes the root over. */
+  [data-overlayscrollbars-initialize]:not([data-overlayscrollbars]) [data-virtuoso-scroller] {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  [data-overlayscrollbars-initialize]:not([data-overlayscrollbars])
+    [data-virtuoso-scroller]::-webkit-scrollbar {
+    display: none;
+  }
+
   [data-eink='true'] input.search-input,
   [data-eink='true'] input.search-input:focus {
     border-width: 1px !important;
@@ -1461,5 +1493,57 @@
   [data-eink='true'] .tts-scrubber {
     height: 6px;
     border: 1px solid currentColor;
+  }
+
+  /* Nearby BookDrop radar view: scanning ripples behind the self chip and a
+     pop-in for newly discovered peer tiles. Decorative motion only — the
+     transfer progress ring is drawn with SVG stroke offsets and keeps
+     updating when these animations are disabled. */
+  @keyframes localsend-ripple {
+    0% {
+      transform: scale(0.25);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 0;
+    }
+  }
+  .animate-localsend-ripple {
+    animation: localsend-ripple 2.4s ease-out infinite;
+  }
+  @keyframes localsend-pop-in {
+    0% {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.06);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  .animate-localsend-pop-in {
+    animation: localsend-pop-in 0.35s ease-out both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-localsend-ripple {
+      animation: none;
+      display: none;
+    }
+    .animate-localsend-pop-in {
+      animation: none;
+    }
+  }
+  /* E-ink refreshes can't animate; the bordered static tiles carry the UI. */
+  [data-eink='true'] .animate-localsend-ripple {
+    animation: none;
+    display: none;
+  }
+  [data-eink='true'] .animate-localsend-pop-in {
+    animation: none;
   }
 }

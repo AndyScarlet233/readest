@@ -134,6 +134,7 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-set-size",
+    "core:window:allow-set-position",
     "core:window:allow-set-title",
     "core:window:allow-set-focus",
     "core:window:allow-is-maximized",
@@ -197,6 +198,7 @@
         }
       ]
     },
+    "barcode-scanner:default",
     "biometric:default",
     "haptics:allow-vibrate",
     "haptics:allow-impact-feedback",
@@ -245,6 +247,8 @@
     "allow-localsend-get-status",
     "allow-localsend-list-devices",
     "allow-localsend-announce",
+    "allow-localsend-set-discoverable",
+    "allow-localsend-is-alive",
     "allow-localsend-respond",
     "allow-localsend-cancel-receive",
     "allow-localsend-send-files",

@@ -20,6 +20,7 @@ import {
   type FileHead,
   type FileSyncProvider,
 } from '@/services/sync/file/provider';
+import { LAN_SYNC_PROTOCOL } from '@/services/lanSync/pairing';
 import type { LanSyncSettings } from '@/types/settings';
 
 const peerBase = (settings: LanSyncSettings): string => {
@@ -33,12 +34,41 @@ const peerBase = (settings: LanSyncSettings): string => {
   return host.includes(':') ? `http://${host}` : `http://${host}:${settings.port}`;
 };
 
+export const buildLanSyncAuthHeaders = (token?: string): Record<string, string> => {
+  const normalized = token?.trim() ?? '';
+  return normalized ? { Authorization: `Bearer ${normalized}` } : {};
+};
+
+const getLanStreamAuthError = (error: unknown, action: string): FileSyncError | null => {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = message.match(/status code\s*:?\s*(\d{3})\b/i)?.[1];
+  const statusCode = status ? Number(status) : undefined;
+  if (statusCode !== 401 && statusCode !== 403) return null;
+  return new FileSyncError(
+    `LAN peer rejected the pairing token (${action})`,
+    'AUTH_FAILED',
+    statusCode,
+  );
+};
+
+/**
+ * Native LAN transfers must never fail open into FileSyncEngine's buffered
+ * compatibility path. That fallback materialises an entire book in the JS
+ * heap/WebView and can make mobile clients unresponsive for large CBZ/PDFs.
+ */
+export const toLanStreamError = (error: unknown, action: 'upload' | 'download'): FileSyncError => {
+  const authError = getLanStreamAuthError(error, action);
+  if (authError) return authError;
+  const message = error instanceof Error ? error.message : String(error);
+  return new FileSyncError(`LAN peer ${action} stream failed: ${message}`, 'NETWORK');
+};
+
 const doFetch = async (
   settings: LanSyncSettings,
   path: string,
   init?: { method?: string; body?: BodyInit; contentType?: string },
 ): Promise<Response> => {
-  const headers: Record<string, string> = { Authorization: `Bearer ${settings.token}` };
+  const headers: Record<string, string> = buildLanSyncAuthHeaders(settings.token);
   if (init?.body !== undefined) {
     headers['Content-Type'] =
       init.contentType ??
@@ -92,15 +122,36 @@ const fileRequest = async (
  */
 export const lanSyncPing = async (
   settings: LanSyncSettings,
-): Promise<{ name: string; device_id: string; protocol?: string }> => {
+): Promise<{ name: string; device_id: string; protocol: string }> => {
   const res = await doFetch(settings, '/ping');
   mapStatus(res, 'ping');
-  return (await res.json()) as { name: string; device_id: string; protocol?: string };
+  const value: unknown = await res.json();
+  if (!value || typeof value !== 'object') {
+    throw new FileSyncError('LAN peer is not a compatible Readest server', 'UNKNOWN', res.status);
+  }
+  const peer = value as Record<string, unknown>;
+  const protocol = peer['protocol'];
+  const name = peer['name'];
+  const deviceId = peer['device_id'];
+  if (protocol !== LAN_SYNC_PROTOCOL || typeof name !== 'string' || typeof deviceId !== 'string') {
+    throw new FileSyncError('LAN peer is not a compatible Readest server', 'UNKNOWN', res.status);
+  }
+  return {
+    name,
+    device_id: deviceId,
+    protocol,
+  };
 };
 
 export const createLanSyncProvider = (settings: LanSyncSettings): FileSyncProvider => {
+  const native = isTauriAppPlatform();
   const provider: FileSyncProvider = {
     rootPath: '/',
+    // Book binaries can be hundreds of MB or several GB. Native LAN must stay
+    // disk-to-socket/disk-to-disk: never fall back to a whole-book ArrayBuffer
+    // in the WebView. One bulky stream at a time also prevents an Android peer
+    // from servicing four large file pipelines while trying to render the UI.
+    ...(native ? { requireBookStreaming: true, maxConcurrentBookTransfers: 1 } : {}),
 
     readText: async (path) => {
       const res = await fileRequest(settings, path, { method: 'GET' });
@@ -143,11 +194,17 @@ export const createLanSyncProvider = (settings: LanSyncSettings): FileSyncProvid
     },
 
     writeText: async (path, body) => {
-      await fileRequest(settings, path, { method: 'PUT', body });
+      const res = await fileRequest(settings, path, { method: 'PUT', body });
+      if (!res) {
+        throw new FileSyncError(`LAN peer file was not found for PUT ${path}`, 'NOT_FOUND', 404);
+      }
     },
 
     writeBinary: async (path, body) => {
-      await fileRequest(settings, path, { method: 'PUT', body });
+      const res = await fileRequest(settings, path, { method: 'PUT', body });
+      if (!res) {
+        throw new FileSyncError(`LAN peer file was not found for PUT ${path}`, 'NOT_FOUND', 404);
+      }
     },
 
     ensureDir: async () => {
@@ -162,42 +219,40 @@ export const createLanSyncProvider = (settings: LanSyncSettings): FileSyncProvid
     },
   };
 
-  // Streaming transfers, Tauri only (same ownership + fallback rules as the
-  // other providers): without these the engine falls back to the buffered
-  // path, which hauls every book byte twice across the webview main thread
-  // (fs IPC in, plugin-http IPC out) and stalls the whole app on large
-  // libraries. The Rust side streams straight from disk to the peer instead.
-  if (isTauriAppPlatform()) {
-    const authHeaders = (): Record<string, string> => ({
-      Authorization: `Bearer ${settings.token}`,
-    });
+  // Streaming transfers are mandatory for native LAN book binaries. Returning
+  // false here would ask FileSyncEngine to retry through readBinary/writeBinary,
+  // hauling the entire book through the WebView and recreating the large-file
+  // UI freeze this path exists to avoid. Rust streams disk-to-network directly.
+  if (native) {
+    const authHeaders = (): Record<string, string> => buildLanSyncAuthHeaders(settings.token);
     const fileUrl = (path: string): string => `${peerBase(settings)}/files${path}`;
 
     provider.uploadStream = async (remotePath, localPath) => {
       try {
-        // tauriUpload's TS type says Map, but the Rust command accepts a JSON
-        // object → HashMap<String, String>; pass the headers object directly.
-        await tauriUpload(
-          fileUrl(remotePath),
-          localPath,
-          'PUT',
-          undefined,
-          authHeaders() as unknown as Map<string, string>,
-        );
+        await tauriUpload(fileUrl(remotePath), localPath, 'PUT', undefined, authHeaders());
         return true;
       } catch (e) {
         console.warn('LanSyncProvider.uploadStream failed', remotePath, e);
-        return false;
+        throw toLanStreamError(e, 'upload');
       }
     };
 
     provider.downloadStream = async (remotePath, localPath, onProgress) => {
       try {
-        await tauriDownload(fileUrl(remotePath), localPath, onProgress, authHeaders());
+        await tauriDownload(
+          fileUrl(remotePath),
+          localPath,
+          onProgress,
+          authHeaders(),
+          undefined,
+          false,
+          false,
+          { resume: true },
+        );
         return true;
       } catch (e) {
         console.warn('LanSyncProvider.downloadStream failed', remotePath, e);
-        return false;
+        throw toLanStreamError(e, 'download');
       }
     };
   }

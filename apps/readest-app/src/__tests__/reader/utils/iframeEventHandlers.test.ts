@@ -37,6 +37,29 @@ function touchEvent(touches: Touch[], changedTouches: Touch[] = touches): TouchE
   } as unknown as TouchEvent;
 }
 
+function fixedLayoutFrame(
+  overrides: { scrolled?: boolean; isOverflowX?: boolean; isOverflowY?: boolean } = {},
+) {
+  const host = document.createElement('foliate-fxl') as HTMLElement & {
+    scrolled: boolean;
+    isOverflowX: boolean;
+    isOverflowY: boolean;
+  };
+  host.scrolled = overrides.scrolled ?? false;
+  host.isOverflowX = overrides.isOverflowX ?? false;
+  host.isOverflowY = overrides.isOverflowY ?? false;
+  const shadow = host.attachShadow({ mode: 'open' });
+  const frame = document.createElement('iframe');
+  shadow.append(frame);
+  const frameDocument = { defaultView: { frameElement: frame } } as unknown as Document;
+  return { host, frameDocument };
+}
+
+function eventAtDocument(event: TouchEvent, frameDocument: Document): TouchEvent {
+  Object.defineProperty(event, 'currentTarget', { configurable: true, value: frameDocument });
+  return event;
+}
+
 function postedTypes(spy: ReturnType<typeof vi.spyOn>): string[] {
   return spy.mock.calls.map((call: unknown[]) => (call[0] as { type: string }).type);
 }
@@ -309,6 +332,172 @@ describe('iframeEventHandlers touch forwarding', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  test('mouse movement forwards the button bit so a released drag can finish', async () => {
+    const { handleMousedown, handleMousemove, setMousePanArmed } = await importHandlers();
+    setMousePanArmed('book-1', true);
+    handleMousedown('book-1', mouseEvent({ buttons: 1 }));
+    handleMousemove('book-1', mouseEvent({ buttons: 0, screenX: 120 }));
+
+    expect(postSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'iframe-mousemove',
+        bookKey: 'book-1',
+        buttons: 0,
+        screenX: 120,
+      }),
+      '*',
+    );
+  });
+
+  test('raw fixed-layout mouse pan preserves diagonal movement with dual overflow', async () => {
+    const { handleMousedown, handleMousemove } = await importHandlers();
+    const { host, frameDocument } = fixedLayoutFrame({
+      isOverflowX: true,
+      isOverflowY: true,
+    });
+    const pan = vi.fn();
+    (host as typeof host & { pan: (dx: number, dy: number) => void }).pan = pan;
+
+    const start = mouseEvent({ buttons: 1, screenX: 100, screenY: 100 });
+    Object.defineProperty(start, 'currentTarget', { configurable: true, value: frameDocument });
+    handleMousedown('book-1', start);
+
+    const move = mouseEvent({ buttons: 1, screenX: 112, screenY: 109 });
+    Object.defineProperty(move, 'currentTarget', { configurable: true, value: frameDocument });
+    handleMousemove('book-1', move);
+
+    expect(pan).toHaveBeenCalledWith(-12, -9);
+    expect(move.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('raw fixed-layout mouse pan claims the first move and suppresses its click', async () => {
+    const { handleClick, handleMousedown, handleMousemove, handleMouseup, setMousePanArmed } =
+      await importHandlers();
+    setMousePanArmed('book-1', true, { horizontal: true, vertical: false });
+    handleMousedown('book-1', mouseEvent({ buttons: 1, screenX: 100, screenY: 100 }));
+
+    const move = mouseEvent({ buttons: 1, screenX: 108, screenY: 101 });
+    handleMousemove('book-1', move);
+    expect(move.preventDefault).toHaveBeenCalledOnce();
+
+    const up = mouseEvent({ buttons: 0, screenX: 108, screenY: 101 });
+    handleMouseup('book-1', up);
+    expect(up.preventDefault).toHaveBeenCalledOnce();
+
+    const click = mouseEvent({ screenX: 108, screenY: 101 });
+    handleClick('book-1', { current: true }, false, false, click);
+    expect(click.preventDefault).toHaveBeenCalledOnce();
+    expect(click.stopImmediatePropagation).toHaveBeenCalledOnce();
+    expect(postedTypes(postSpy)).not.toContain('iframe-single-click');
+  });
+
+  test('fixed-layout touch pan claims and prevents the raw browser gesture', async () => {
+    const { handleTouchStart, handleTouchMove, setTouchPanArmed } = await importHandlers();
+    setTouchPanArmed('book-1', true, { horizontal: true, vertical: false });
+    const start = touchPoint(200, 300);
+    const move = touchEvent([touchPoint(190, 302)]);
+
+    handleTouchStart('book-1', touchEvent([start]));
+    handleTouchMove('book-1', move);
+
+    expect(move.preventDefault).toHaveBeenCalledOnce();
+    expect(postSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'iframe-touchmove',
+        bookKey: 'book-1',
+        targetTouches: [{ clientX: 190, clientY: 302, screenX: 190, screenY: 302 }],
+      }),
+      '*',
+    );
+  });
+
+  test('fixed-layout touch pan leaves an unavailable axis to the native gesture', async () => {
+    const { handleTouchStart, handleTouchMove, setTouchPanArmed } = await importHandlers();
+    setTouchPanArmed('book-1', true, { horizontal: true, vertical: false });
+    const start = touchPoint(200, 300);
+    const move = touchEvent([touchPoint(202, 310)]);
+
+    handleTouchStart('book-1', touchEvent([start]));
+    handleTouchMove('book-1', move);
+
+    expect(move.preventDefault).not.toHaveBeenCalled();
+  });
+
+  test('fixed-layout touch pan reads the iframe renderer axes synchronously and refreshes them', async () => {
+    const { handleTouchStart, handleTouchMove } = await importHandlers();
+    const { host, frameDocument } = fixedLayoutFrame({ isOverflowX: true });
+    const start = eventAtDocument(touchEvent([touchPoint(200, 300)]), frameDocument);
+    handleTouchStart('book-1', start);
+
+    // The page can change overflow after touchstart (for example after a
+    // renderer resize). The raw iframe path must use the current axis.
+    host.isOverflowX = false;
+    host.isOverflowY = true;
+    const move = eventAtDocument(touchEvent([touchPoint(202, 312)]), frameDocument);
+    handleTouchMove('book-1', move);
+
+    expect(move.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('fixed-layout touch pan stays native when the renderer is scrolled or has no overflow', async () => {
+    const { handleTouchStart, handleTouchMove } = await importHandlers();
+    const { host, frameDocument } = fixedLayoutFrame({ isOverflowX: true });
+    host.scrolled = true;
+    const scrolledStart = eventAtDocument(touchEvent([touchPoint(200, 300)]), frameDocument);
+    handleTouchStart('book-1', scrolledStart);
+    const scrolledMove = eventAtDocument(touchEvent([touchPoint(212, 300)]), frameDocument);
+    handleTouchMove('book-1', scrolledMove);
+    expect(scrolledMove.preventDefault).not.toHaveBeenCalled();
+
+    host.scrolled = false;
+    host.isOverflowX = false;
+    host.isOverflowY = false;
+    const fittingStart = eventAtDocument(touchEvent([touchPoint(200, 300)]), frameDocument);
+    handleTouchStart('book-1', fittingStart);
+    const fittingMove = eventAtDocument(touchEvent([touchPoint(212, 300)]), frameDocument);
+    handleTouchMove('book-1', fittingMove);
+    expect(fittingMove.preventDefault).not.toHaveBeenCalled();
+  });
+
+  test('raw iframe touch arbitration lets a higher-priority interceptor claim before fixed pan', async () => {
+    const { handleTouchStart, handleTouchMove, handleTouchEnd } = await importHandlers();
+    const { registerTouchInterceptor } = await import('@/app/reader/hooks/useTouchInterceptor');
+    const { host, frameDocument } = fixedLayoutFrame({ isOverflowX: true });
+    const phases: string[] = [];
+    const unregister = registerTouchInterceptor(
+      'raw-touch-arbitration-test',
+      (_bookKey, detail) => {
+        phases.push(detail.phase);
+        return detail.phase === 'move';
+      },
+      10,
+    );
+
+    try {
+      const start = eventAtDocument(touchEvent([touchPoint(200, 300)]), frameDocument);
+      handleTouchStart('book-1', start);
+      const move = eventAtDocument(touchEvent([touchPoint(212, 300)]), frameDocument);
+      handleTouchMove('book-1', move);
+      const end = eventAtDocument(touchEvent([], [touchPoint(212, 300)]), frameDocument);
+      handleTouchEnd('book-1', end);
+
+      expect(phases).toEqual(['start', 'move']);
+      expect(move.preventDefault).toHaveBeenCalledOnce();
+      expect(end.preventDefault).toHaveBeenCalledOnce();
+      expect(postSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'iframe-touchmove',
+          interceptorsDispatched: true,
+          interceptorConsumed: true,
+        }),
+        '*',
+      );
+    } finally {
+      unregister();
+      host.remove();
+    }
   });
 
   test('touchend forwards the released finger through changedTouches', async () => {

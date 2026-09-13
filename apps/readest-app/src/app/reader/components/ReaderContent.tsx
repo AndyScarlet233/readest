@@ -55,6 +55,13 @@ import HardcoverLinkDialog from './hardcover/HardcoverLinkDialog';
 import ModalPortal from '@/components/ModalPortal';
 import NotebookTransitionAlert from './notebook/NotebookTransitionAlert';
 
+/**
+ * How long the close path waits for the Notion flush before giving up on it.
+ * `tauriHandleOnCloseWindow` preventDefaults the close and awaits our callback,
+ * so an unbounded flush would leave the window unclosable on a dead network.
+ */
+const NOTION_FLUSH_TIMEOUT_MS = 3000;
+
 const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ ids, settings }) => {
   const _ = useTranslation();
   const router = useRouter();
@@ -83,11 +90,14 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
 
   useBookShortcuts({ sideBarBookKey, bookKeys });
   const isAndroidApp = appService?.isAndroidApp === true;
-  const androidGamepadConnected = useAndroidGamepadConnection(isAndroidApp);
+  // Settings > Behavior > Device > Gamepad Support. Off when the device's own
+  // remapper already binds the controller to keys (issue #5979).
+  const gamepadEnabled = useSettingsStore((state) => state.settings.gamepadEnabled) !== false;
+  const androidGamepadConnected = useAndroidGamepadConnection(isAndroidApp && gamepadEnabled);
   // Android's native bridge gates the Web Gamepad API so Chromium polls only
   // while a controller exists. Other platforms retain the existing behavior.
   useGamepad({
-    enabled: appService !== null && (!isAndroidApp || androidGamepadConnected),
+    enabled: appService !== null && gamepadEnabled && (!isAndroidApp || androidGamepadConnected),
   });
 
   useEffect(() => {
@@ -233,7 +243,15 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
       const settings = useSettingsStore.getState().settings;
       eventDispatcher.dispatch('sync-book-progress', { bookKey });
       eventDispatcher.dispatch('flush-kosync', { bookKey });
+      // Persist locally before any remote flush. `beforeunload` and `quit-app`
+      // can unload the document while a flush is still in flight, and losing
+      // the reading position costs the user more than deferring a Notion push
+      // (the push is idempotent and resumes on the next sync).
       await saveConfig(envConfig, bookKey, config, settings);
+      await Promise.race([
+        eventDispatcher.dispatch('flush-notion-sync', { bookKey }),
+        new Promise<void>((resolve) => setTimeout(resolve, NOTION_FLUSH_TIMEOUT_MS)),
+      ]);
     }
   };
 

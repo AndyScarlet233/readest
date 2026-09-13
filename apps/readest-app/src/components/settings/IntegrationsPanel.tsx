@@ -8,6 +8,7 @@ import {
   RiRssLine,
   RiBookReadLine,
   RiBook3Line,
+  RiFileList3Line,
   RiDiscordLine,
   RiSendPlaneLine,
   RiWifiLine,
@@ -29,11 +30,13 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useCustomOPDSStore } from '@/store/customOPDSStore';
 import { useABSServerStore } from '@/store/absServerStore';
 import { useFileSyncStore } from '@/store/fileSyncStore';
+import { useLocalSendStore } from '@/store/localsendStore';
 import { CatalogManager } from '@/app/opds/components/CatalogManager';
 import { saveSysSettings } from '@/helpers/settings';
 import { isCloudSyncAllowed } from '@/utils/access';
 import { isTauriAppPlatform, isWebAppPlatform } from '@/services/environment';
-import { isLocalSendEnabled } from '@/services/localsend/devicePrefs';
+import { stopLanSync } from '@/services/lanSync/lifecycle';
+import { getLocalSendAlias, isLocalSendEnabled } from '@/services/localsend/devicePrefs';
 import { getGoogleWebClientId } from '@/services/sync/providers/gdrive/buildGoogleDriveProvider';
 import { getMicrosoftClientId } from '@/services/sync/providers/onedrive/buildOneDriveProvider';
 import { isICloudSupportedPlatform } from '@/services/sync/providers/icloud/buildICloudProvider';
@@ -44,6 +47,7 @@ import BookOrbitForm from './integrations/BookOrbitForm';
 import KOSyncForm from './integrations/KOSyncForm';
 import ReadwiseForm from './integrations/ReadwiseForm';
 import HardcoverForm from './integrations/HardcoverForm';
+import NotionForm from './integrations/NotionForm';
 import SendToReadestForm from './integrations/SendToReadestForm';
 import LocalSendForm from './integrations/LocalSendForm';
 import LanForm from './integrations/LanForm';
@@ -82,6 +86,7 @@ type SubPage =
   | 'readest-cloud'
   | 'readwise'
   | 'hardcover'
+  | 'notion'
   | 'opds'
   | 'audiobookshelf'
   | 'send'
@@ -105,11 +110,12 @@ const IntegrationsPanel: React.FC = () => {
   const router = useRouter();
   const { envConfig, appService } = useEnv();
   const { user } = useAuth();
-  const { settings, requestedSubPage, setRequestedSubPage } = useSettingsStore();
+  const { settings, requestedSubPage, setRequestedSubPage, setSettings } = useSettingsStore();
   const opdsCatalogs = useCustomOPDSStore((s) => s.catalogs);
   const opdsCount = opdsCatalogs.filter((c) => !c.deletedAt).length;
   const absServers = useABSServerStore((s) => s.servers);
   const absCount = absServers.filter((s) => !s.deletedAt).length;
+  const localSendAlias = useLocalSendStore((s) => s.status?.alias);
   // Surface a library-wide WebDAV sync that's mid-flight in the row's
   // status line. Keeps the user from feeling like the run was lost
   // when they back out of the WebDAV sub-page or close the dialog.
@@ -220,6 +226,7 @@ const IntegrationsPanel: React.FC = () => {
       requestedSubPage === 'icloud' ||
       requestedSubPage === 'readwise' ||
       requestedSubPage === 'hardcover' ||
+      requestedSubPage === 'notion' ||
       requestedSubPage === 'opds' ||
       requestedSubPage === 'audiobookshelf' ||
       requestedSubPage === 'send' ||
@@ -444,7 +451,7 @@ const IntegrationsPanel: React.FC = () => {
               </li>
               <li>
                 {_(
-                  'Both devices must be on the same network, run Readest with LAN Sync enabled, and share the same pairing token.',
+                  'Both devices must be on the same network and run Readest with LAN Sync enabled. A pairing token is optional; if set, use the same token on both devices.',
                 )}
               </li>
             </Tips>
@@ -480,6 +487,12 @@ const IntegrationsPanel: React.FC = () => {
     return (
       <div className='my-4 w-full'>
         <HardcoverForm onBack={() => setSubPage(null)} />
+      </div>
+    );
+  if (subPage === 'notion')
+    return (
+      <div className='my-4 w-full'>
+        <NotionForm onBack={() => setSubPage(null)} />
       </div>
     );
   if (subPage === 'opds')
@@ -521,6 +534,10 @@ const IntegrationsPanel: React.FC = () => {
 
   const readwiseStatus = settings.readwise?.enabled ? _('Connected') : _('Not connected');
   const hardcoverStatus = settings.hardcover?.enabled ? _('Connected') : _('Not connected');
+  const notionStatus =
+    settings.notion?.enabled && settings.notion.accessToken && settings.notion.databaseId
+      ? _('Connected')
+      : _('Not connected');
 
   // Cloud sync providers are independently selectable (#5062): any subset of
   // {Readest Cloud, WebDAV, Google Drive, S3, OneDrive, iCloud} can sync the
@@ -595,7 +612,10 @@ const IntegrationsPanel: React.FC = () => {
     syncBooks: settings.icloud?.syncBooks ?? false,
     booksBackedUpElsewhere: booksBackedUpBy('icloud'),
   });
-  const lanConfigured = !!(settings.lan?.host && settings.lan?.token);
+  // Native LAN Sync can be enabled before a peer is selected so the device
+  // can advertise its own server for first-time pairing. Web still requires a
+  // complete peer address because it cannot host the embedded server.
+  const lanConfigured = isTauriAppPlatform() || !!settings.lan?.host;
   const lanStatus = getThirdPartyRowStatus(_, {
     enabled: !!settings.lan?.enabled,
     configured: lanConfigured,
@@ -613,12 +633,36 @@ const IntegrationsPanel: React.FC = () => {
   });
 
   const toggleCloudProvider = async (kind: CloudSyncProviderKind, next: boolean) => {
-    await persistCloudProviderEnabled(envConfig, kind, next);
+    const isLanDisable = kind === 'lan' && !next && isTauriAppPlatform();
+    const previousSettings = useSettingsStore.getState().settings;
+    if (isLanDisable && previousSettings) {
+      // Disable locally before stopping so every mounted manager observes the
+      // cancellation before the shared server is torn down.
+      setSettings({
+        ...previousSettings,
+        lan: { ...previousSettings.lan, enabled: false },
+      });
+      try {
+        await stopLanSync();
+      } catch (e) {
+        setSettings(previousSettings);
+        throw e;
+      }
+    }
+    try {
+      await persistCloudProviderEnabled(envConfig, kind, next);
+    } catch (e) {
+      if (isLanDisable && previousSettings) setSettings(previousSettings);
+      throw e;
+    }
   };
 
   const opdsStatus =
     opdsCount > 0 ? _('{{count}} catalog', { count: opdsCount }) : _('No catalogs');
   const absStatus = absCount > 0 ? _('{{count}} server', { count: absCount }) : _('No servers');
+  const localSendStatus = !isLocalSendEnabled()
+    ? _('Off')
+    : localSendAlias || getLocalSendAlias() || _('On');
 
   return (
     <div className='my-4 w-full space-y-6'>
@@ -656,6 +700,12 @@ const IntegrationsPanel: React.FC = () => {
               title={_('Hardcover')}
               status={hardcoverStatus}
               onClick={() => setSubPage('hardcover')}
+            />
+            <IntegrationRow
+              icon={RiFileList3Line}
+              title={_('Notion')}
+              status={notionStatus}
+              onClick={() => setSubPage('notion')}
             />
           </div>
         </div>
@@ -778,18 +828,21 @@ const IntegrationsPanel: React.FC = () => {
               />
             )}
             {/* LAN sync is the home-network channel: deliberately not gated by
-                the cloud premium badge — resolveCloudSyncGate never pauses it,
-                and the toggle only needs a configured peer (host + token). */}
+                the cloud premium badge — native clients can enable their own
+                server before selecting a peer for first-time pairing. */}
             <CloudProviderRow
               icon={RiRouterLine}
               title={_('LAN Sync')}
               status={lanStatus}
               checked={!!settings.lan?.enabled}
-              canToggle={canToggleCloudProvider({
-                isPremium: true,
-                isConfigured: lanConfigured,
-                isEnabled: !!settings.lan?.enabled,
-              })}
+              canToggle={
+                isTauriAppPlatform() ||
+                canToggleCloudProvider({
+                  isPremium: true,
+                  isConfigured: lanConfigured,
+                  isEnabled: !!settings.lan?.enabled,
+                })
+              }
               onToggle={(next) => toggleCloudProvider('lan', next)}
               onOpen={() => setSubPage('lan')}
               toggleLabel={_('Sync with LAN')}
@@ -840,7 +893,7 @@ const IntegrationsPanel: React.FC = () => {
               <IntegrationRow
                 icon={RiWifiLine}
                 title={_('Nearby BookDrop')}
-                status={isLocalSendEnabled() ? _('On') : _('Off')}
+                status={localSendStatus}
                 onClick={() => setSubPage('localsend')}
               />
             )}

@@ -72,6 +72,9 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
     viewSettings!.scrolledDirection ?? 'vertical',
   );
   const [webtoonMode, setWebtoonMode] = useState(viewSettings!.webtoonMode ?? false);
+  const [lockHorizontalPan, setLockHorizontalPan] = useState(
+    viewSettings!.lockHorizontalPan ?? false,
+  );
   const [isParagraphMode, setParagraphMode] = useState(
     viewSettings?.paragraphMode?.enabled ?? false,
   );
@@ -96,6 +99,7 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
   const resetContrast = () => setContrast(100);
   const toggleScrolledMode = () => setScrolledMode(!isScrolledMode);
   const toggleWebtoonMode = () => setWebtoonMode(!webtoonMode);
+  const toggleLockHorizontalPan = () => setLockHorizontalPan(!lockHorizontalPan);
   const toggleParagraphMode = () => {
     setParagraphMode(!isParagraphMode);
     eventDispatcher.dispatch('toggle-paragraph-mode', { bookKey });
@@ -143,9 +147,13 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
     // and useHardcoverSync listen for — so for a third-party-only user the row
     // did nothing at all.
     eventDispatcher.dispatch('sync-book-progress', { bookKey });
+    eventDispatcher.dispatch('flush-notion-sync', { bookKey });
     eventDispatcher.dispatch('push-file-sync', { bookKey });
     eventDispatcher.dispatch('pull-file-sync', { bookKey });
     eventDispatcher.dispatch('flush-kosync', { bookKey });
+    // BookOrbit may be in manual mode (#6029), where nothing is ever pending
+    // and the flush above does nothing, so ask it for a real push.
+    eventDispatcher.dispatch('push-kosync', { bookKey, provider: 'bookorbit' });
   };
 
   const handleStartRSVP = () => {
@@ -215,6 +223,15 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
     saveViewSettings(envConfig, bookKey, 'webtoonMode', webtoonMode, false, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [webtoonMode]);
+
+  useEffect(() => {
+    if (lockHorizontalPan === (viewSettings.lockHorizontalPan ?? false)) return;
+    viewSettings.lockHorizontalPan = lockHorizontalPan;
+    getView(bookKey)?.renderer.toggleAttribute('lock-pan-x', lockHorizontalPan);
+    setViewSettings(bookKey, viewSettings);
+    saveViewSettings(envConfig, bookKey, 'lockHorizontalPan', lockHorizontalPan, true, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockHorizontalPan]);
 
   useEffect(() => {
     if (zoomLevel === viewSettings.zoomLevel) return;
@@ -463,6 +480,14 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
               onClick={() => setRtlSpread(!rtlSpread)}
             />
             <MenuItem label={_('Webtoon Mode')} toggled={webtoonMode} onClick={toggleWebtoonMode} />
+            <MenuItem
+              label={_('Lock Horizontal Panning')}
+              toggled={lockHorizontalPan}
+              onClick={toggleLockHorizontalPan}
+              // Horizontal scrolling reads along the x axis, so locking it there
+              // would strand the reader on one page.
+              disabled={isScrolledMode && scrolledDirection === 'horizontal'}
+            />
           </>
           <hr aria-hidden='true' className='border-base-300 my-1' />
         </>

@@ -112,6 +112,35 @@ describe('getFontStyles branches (via getStyles)', () => {
     expect(css).not.toContain('font-family: revert !important');
   });
 
+  // Regression: the app default font used to be injected as a plain `html`
+  // rule, tying on specificity with ebook CSS that also declares its font on
+  // the html element (Pandoc-style EPUBs) and winning purely by injection
+  // order — the book's embedded font silently never applied with "Override
+  // Book Font" off. :where() drops the rule's specificity to zero so any book
+  // declaration beats it.
+  it('injects the default font at zero specificity via :where(html)', () => {
+    const vs = makeViewSettings({ overrideFont: false, defaultFont: 'Serif' });
+    const css = getStyles(vs, theme);
+    expect(css).toContain(':where(html)');
+    expect(css).toMatch(/:where\(html\)\s*\{\s*font-family: var\(--serif\)/);
+  });
+
+  // The monospace injection is zero-specificity too, so a book's own code font
+  // wins when Override Book Font is off. With the toggle ON the rule has to
+  // swap sides and outrank the book, which !important alone cannot do:
+  // specificity still breaks ties between important author declarations.
+  // The resolved cascade is asserted in code-font-override.browser.test.ts.
+  it('swaps the monospace rule above the book only when overrideFont is on', () => {
+    const off = getStyles(makeViewSettings({ overrideFont: false }), theme);
+    expect(off).toMatch(/:where\(pre, code, kbd\)\s*\{\s*font-family: var\(--monospace\)\s*;/);
+
+    const on = getStyles(makeViewSettings({ overrideFont: true }), theme);
+    expect(on).toMatch(
+      /html body :is\(pre, code, kbd\)\s*\{\s*font-family: var\(--monospace\) !important\s*;/,
+    );
+    expect(on).not.toContain(':where(pre, code, kbd)');
+  });
+
   it('sets font-size according to defaultFontSize', () => {
     const vs = makeViewSettings({ defaultFontSize: 20 });
     const css = getStyles(vs, theme);
@@ -407,6 +436,9 @@ describe('getLayoutStyles branches (via getStyles)', () => {
     expect(css).not.toContain('text-indent: 2em');
     expect(css).not.toContain('hyphens: auto');
     expect(css).not.toContain('-webkit-hyphens: auto');
+    // the body line-height reset exists to make room for our paragraph rules;
+    // with the book's layout in charge its `body { line-height }` must inherit
+    expect(css).not.toContain('line-height: unset');
     // non-paragraph layout rules must still be emitted
     expect(css).toContain('@namespace epub');
     expect(css).toContain('--margin-top: 50px');
@@ -436,6 +468,7 @@ describe('getLayoutStyles branches (via getStyles)', () => {
     expect(css).toContain('letter-spacing: 2px');
     expect(css).toContain('text-indent: 2em');
     expect(css).toContain('hyphens: auto');
+    expect(css).toContain('line-height: unset');
   });
 });
 

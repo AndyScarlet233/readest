@@ -33,10 +33,12 @@ import {
   applyEinkModeAttribute,
   applyFixedlayoutStyles,
   applyImageStyle,
+  applyNamespacedAttributes,
   applyScrollbarStyle,
   applyScrollModeClass,
   applyThemeModeClass,
   applyTranslationStyle,
+  getOverlayerBlendMode,
   getStyles,
   getThemeCode,
   keepTextAlignment,
@@ -55,6 +57,7 @@ import {
   handleMousedown,
   handleMouseup,
   handleMousemove,
+  handleDragstart,
   handleAuxclick,
   handleClick,
   handleClickCapture,
@@ -236,6 +239,10 @@ const FoliateViewer: React.FC<{
   }, [bookKey, setProgress]);
 
   const progressRelocateHandler = (event: Event) => {
+    // Foliate can emit a late relocation after close() clears its progress
+    // resolver. Keep any valid pending position instead of replacing it.
+    if (!(event as CustomEvent).detail.location) return;
+
     // Always stash the latest detail; if another rAF is already pending
     // it'll pick this up and the intermediate states are skipped.
     pendingRelocateRef.current = event as CustomEvent;
@@ -349,6 +356,9 @@ const FoliateViewer: React.FC<{
     const detail = (event as CustomEvent).detail;
     console.log('doc index loaded:', detail.index);
     if (detail.doc) {
+      // Repair the parsed DOM before anything reads it: the renderer and the
+      // fix-ups below both resolve styles off this document.
+      applyNamespacedAttributes(detail.doc);
       const renderer = viewRef.current?.renderer;
       const writingDir = renderer?.setStyles && getDirection(detail.doc);
       const viewSettings = getViewSettings(bookKey)!;
@@ -454,6 +464,7 @@ const FoliateViewer: React.FC<{
         detail.doc.addEventListener('mousedown', handleMousedown.bind(null, bookKey));
         detail.doc.addEventListener('mouseup', handleMouseup.bind(null, bookKey));
         detail.doc.addEventListener('mousemove', handleMousemove.bind(null, bookKey));
+        detail.doc.addEventListener('dragstart', handleDragstart.bind(null, bookKey));
         detail.doc.addEventListener('auxclick', handleAuxclick.bind(null, bookKey));
         detail.doc.addEventListener('click', handleClickCapture.bind(null, bookKey), {
           capture: true,
@@ -591,8 +602,8 @@ const FoliateViewer: React.FC<{
     }
   };
 
-  const { handlePageFlip } = usePagination(bookKey, viewRef, containerRef);
-  const mouseHandlers = useMouseEvent(bookKey, handlePageFlip);
+  const { handlePageFlip, handleMousePan } = usePagination(bookKey, viewRef, containerRef);
+  const mouseHandlers = useMouseEvent(bookKey, handlePageFlip, handleMousePan);
   const touchHandlers = useTouchEvent(bookKey);
   const autoscrollAnchor = useMiddleClickAutoscroll(bookKey, viewRef, containerRef);
 
@@ -803,6 +814,7 @@ const FoliateViewer: React.FC<{
         view.renderer.setAttribute('spread', viewSettings.spreadMode);
         view.renderer.setAttribute('scale-factor', viewSettings.zoomLevel);
         view.renderer.setAttribute('scroll-gap', getScrollGapAttr(viewSettings.webtoonMode));
+        view.renderer.toggleAttribute('lock-pan-x', !!viewSettings.lockHorizontalPan);
       } else {
         view.renderer.setAttribute('max-column-count', maxColumnCount);
         view.renderer.setAttribute('max-inline-size', `${maxInlineSize}px`);
@@ -989,6 +1001,33 @@ const FoliateViewer: React.FC<{
     viewSettings?.contrast,
     viewSettings?.hideScrollbar,
     viewSettings?.isEink,
+  ]);
+
+  // The annotation overlay lives outside the content iframe, so its blend mode
+  // has to follow the page the highlight sits on rather than the app theme: a
+  // PDF keeps its own white bitmap in a dark theme unless the reader asked us
+  // to darken it (#5790, #5930, #5943). Scoped to this view so the library and
+  // reflowable books keep the global default from useTheme.
+  useEffect(() => {
+    if (!containerRef.current || !viewSettings) return;
+    containerRef.current.style.setProperty(
+      '--overlayer-highlight-blend-mode',
+      getOverlayerBlendMode({
+        isDarkMode,
+        isBwEink: !!viewSettings.isEink && !viewSettings.isColorEink,
+        isFixedLayout: bookDoc.rendition?.layout === 'pre-paginated',
+        invertImgColorInDark: !!viewSettings.invertImgColorInDark,
+        applyThemeToPDF: !!viewSettings.applyThemeToPDF,
+        format: bookData?.book?.format,
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isDarkMode,
+    viewSettings?.isEink,
+    viewSettings?.isColorEink,
+    viewSettings?.invertImgColorInDark,
+    viewSettings?.applyThemeToPDF,
   ]);
 
   useEffect(() => {

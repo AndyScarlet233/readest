@@ -253,7 +253,7 @@ class OneDriveProviderImpl {
       const uploadUrl = await this.openUploadSession(remotePath);
       await tauriUpload(uploadUrl, localPath, 'PUT', undefined, {
         'Content-Range': `bytes 0-${size - 1}/${size}`,
-      } as unknown as Map<string, string>);
+      });
       return true;
     } catch (e) {
       console.warn('OneDriveProvider.uploadStream failed', remotePath, e);
@@ -292,13 +292,20 @@ class OneDriveProviderImpl {
   ): Promise<boolean> {
     try {
       const token = await this.auth.getAccessToken();
-      await tauriDownload(contentUrl(remotePath), localPath, onProgress, {
-        Authorization: `Bearer ${token}`,
-      });
+      await tauriDownload(
+        contentUrl(remotePath),
+        localPath,
+        onProgress,
+        { Authorization: `Bearer ${token}` },
+        undefined,
+        undefined,
+        undefined,
+        { resume: true },
+      );
       return true;
     } catch (e) {
       console.warn('OneDriveProvider.downloadStream failed', remotePath, e);
-      return false;
+      throw mapGraphError(e);
     }
   }
 

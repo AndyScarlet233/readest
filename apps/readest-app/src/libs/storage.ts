@@ -212,6 +212,7 @@ export const downloadFile = async ({
         undefined,
         singleThreaded,
         skipSslVerification,
+        { resume: true },
       );
     }
   } catch (error) {

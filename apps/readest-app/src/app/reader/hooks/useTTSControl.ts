@@ -64,6 +64,7 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
   const { getMergedRules } = useProofreadStore();
 
   const [ttsLang, setTtsLang] = useState<string>('en');
+  const [ttsSectionIndex, setTtsSectionIndex] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showIndicator, setShowIndicator] = useState(false);
@@ -332,6 +333,9 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
             getSectionLabel: () => getProgress(bookKey)?.sectionLabel,
           });
         }
+        controller.setSkipInlineAnnotations(
+          getViewSettings(bookKey)?.ttsSkipInlineAnnotations ?? false,
+        );
         await controller.attachView(view, {
           bookKey,
           preprocessCallback: preprocessSSMLForTTS,
@@ -365,7 +369,10 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
 
   // Controller event listeners (re-registered when ttsController changes)
   useEffect(() => {
-    if (!ttsController || !bookKey) return;
+    if (!ttsController || !bookKey) {
+      setTtsSectionIndex(null);
+      return;
+    }
     const handleNeedAuth = () => {
       eventDispatcher.dispatch('toast', {
         message: _('Please log in to use advanced TTS features'),
@@ -615,11 +622,20 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
       }
     };
 
+    const handleSectionIndexChange = (e: Event) => {
+      const { sectionIndex } = (e as CustomEvent<{ sectionIndex: number }>).detail;
+      setTtsSectionIndex(sectionIndex);
+    };
+
     ttsController.addEventListener('tts-need-auth', handleNeedAuth);
     ttsController.addEventListener('tts-highlight-mark', handleHighlightMark);
     ttsController.addEventListener('tts-highlight-word', handleHighlightWord);
     ttsController.addEventListener('tts-position', handlePosition);
     ttsController.addEventListener('tts-state-change', handleStateChange);
+    ttsController.addEventListener('tts-section-change', handleSectionIndexChange);
+    // The controller may have initialized its section before this effect was
+    // registered, so hydrate from the same canonical source as the event.
+    setTtsSectionIndex(ttsController.getSectionIndex());
     return () => {
       stopPageFollow();
       ttsController.removeEventListener('tts-need-auth', handleNeedAuth);
@@ -627,6 +643,7 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
       ttsController.removeEventListener('tts-highlight-word', handleHighlightWord);
       ttsController.removeEventListener('tts-position', handlePosition);
       ttsController.removeEventListener('tts-state-change', handleStateChange);
+      ttsController.removeEventListener('tts-section-change', handleSectionIndexChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ttsController, bookKey]);
@@ -812,6 +829,12 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
     }
   }, [viewSettings?.ttsHighlightGranularity]);
 
+  useEffect(() => {
+    ttsControllerRef.current?.setSkipInlineAnnotations(
+      viewSettings?.ttsSkipInlineAnnotations ?? false,
+    );
+  }, [viewSettings?.ttsSkipInlineAnnotations]);
+
   // handleStop (defined before handleTTSSpeak/handleTTSStop which reference it)
   const handleStop = useCallback(
     async (bookKey: string) => {
@@ -932,6 +955,7 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
           preprocessSSMLForTTS,
           handleSectionChange,
         );
+        ttsController.setSkipInlineAnnotations(viewSettings.ttsSkipInlineAnnotations ?? false);
         // The constructor takes the view directly (attachView, which also binds
         // this, only runs on the background-session reattach path), so set the
         // book key here or the per-book audio cache never gets a hash to open.
@@ -1299,6 +1323,7 @@ export const useTTSControl = ({ bookKey, onRequestHidePanel }: UseTTSControlProp
     isPlaying,
     isPaused,
     ttsLang,
+    ttsSectionIndex,
     ttsClientsInited,
     isTTSActive: ttsController !== null,
     showIndicator,

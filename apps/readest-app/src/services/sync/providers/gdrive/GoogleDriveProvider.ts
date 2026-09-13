@@ -731,7 +731,7 @@ class DriveProviderImpl {
 
       const responseBody = await tauriUpload(sessionUri, localPath, 'PUT', undefined, {
         [CONTENT_TYPE_HEADER]: DEFAULT_BINARY_CONTENT_TYPE,
-      } as unknown as Map<string, string>);
+      });
 
       // Overwrite preserves the file id; a new file's id is in the completion
       // body. Cache it so a following head/read skips re-walking the tree;
@@ -798,13 +798,20 @@ class DriveProviderImpl {
       const fileId = await this.resolveFile(remotePath);
       if (fileId === null) return false;
       const token = await this.auth.getAccessToken();
-      await tauriDownload(mediaDownloadUrl(fileId), localPath, onProgress, {
-        Authorization: `Bearer ${token}`,
-      });
+      await tauriDownload(
+        mediaDownloadUrl(fileId),
+        localPath,
+        onProgress,
+        { Authorization: `Bearer ${token}` },
+        undefined,
+        undefined,
+        undefined,
+        { resume: true },
+      );
       return true;
     } catch (e) {
       console.warn('GoogleDriveProvider.downloadStream failed', remotePath, e);
-      return false;
+      throw mapDriveError(e);
     }
   }
 

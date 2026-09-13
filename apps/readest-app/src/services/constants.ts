@@ -23,6 +23,7 @@ import {
   KOSyncSettings,
   LibraryGroupByType,
   LibrarySortByType,
+  NotionSettings,
   ReadSettings,
   ReadwiseSettings,
   SystemSettings,
@@ -94,6 +95,7 @@ export const DEFAULT_BOOKORBIT_SETTINGS = {
   syncNotes: true,
   syncStats: true,
   syncBookStates: true,
+  autoSync: true,
 } as BookOrbitSettings;
 
 export const READWISE_API_BASE_URL = 'https://readwise.io/api/v2';
@@ -111,6 +113,17 @@ export const DEFAULT_HARDCOVER_SETTINGS = {
   lastSyncedAt: 0,
   autoSync: false,
 } as HardcoverSettings;
+
+export const NOTION_API_BASE_URL = 'https://api.notion.com/v1';
+export const NOTION_API_VERSION = '2026-03-11';
+
+export const DEFAULT_NOTION_SETTINGS = {
+  enabled: false,
+  accessToken: '',
+  databaseId: '',
+  lastSyncedAt: 0,
+  includeChapterHeading: true,
+} as NotionSettings;
 
 export const DEFAULT_WEBDAV_SETTINGS = {
   enabled: false,
@@ -209,6 +222,7 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
       refresh: null,
     },
   },
+  gamepadEnabled: true,
   openLastBooks: false,
   lastOpenBooks: [],
   autoImportBooksOnOpen: false,
@@ -247,6 +261,7 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   bookorbit: DEFAULT_BOOKORBIT_SETTINGS,
   readwise: DEFAULT_READWISE_SETTINGS,
   hardcover: DEFAULT_HARDCOVER_SETTINGS,
+  notion: DEFAULT_NOTION_SETTINGS,
   webdav: DEFAULT_WEBDAV_SETTINGS,
   googleDrive: DEFAULT_GOOGLE_DRIVE_SETTINGS,
   s3: DEFAULT_S3_SETTINGS,
@@ -347,6 +362,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   scrolled: false,
   scrolledDirection: 'vertical',
   webtoonMode: false,
+  lockHorizontalPan: false,
   noContinuousScroll: false,
   disableClick: false,
   disableSwipe: false,
@@ -427,6 +443,9 @@ export const DEFAULT_EINK_VIEW_SETTINGS: Partial<ViewSettings> = {
   isEink: true,
   animated: false,
   volumeKeysToFlip: true,
+  // Matches the text-sm the header/footer used to hard-code in e-ink mode,
+  // so e-ink devices keep their larger chrome once the size is configurable.
+  headerFooterFontSize: 14,
 };
 
 export const DEFAULT_PARAGRAPH_MODE_CONFIG: ParagraphModeConfig = {
@@ -455,6 +474,11 @@ export const DEFAULT_VIEW_CONFIG: ViewConfig = {
   progressStyle: 'fraction',
   referencePageCount: 0,
 
+  headerFooterFontSize: 12,
+  headerFooterTextColor: '',
+  headerFooterBackground: 'auto',
+  headerFooterBgOpacity: 0.85,
+
   animated: false,
   pageTurnStyle: 'push',
   isEink: false,
@@ -480,6 +504,7 @@ export const DEFAULT_TTS_CONFIG: TTSConfig = {
   ttsHighlightGranularity: 'word',
   ttsMediaMetadata: 'sentence',
   ttsPlayerStyle: 'full',
+  ttsSkipInlineAnnotations: false,
 };
 
 export const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {

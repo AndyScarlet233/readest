@@ -29,7 +29,7 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
     useReaderStore();
   const { toggleSideBar, setSideBarBookKey, setSideBarVisible, setSearchBarVisible } =
     useSidebarStore();
-  const { setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();
+  const { settings, setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();
   const { getBookData, getConfig, setConfig } = useBookDataStore();
   const { toggleNotebook } = useNotebookStore();
   const { getNextBookKey } = useBooksManager();
@@ -297,9 +297,31 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
     }
   };
 
+  const applyFontSize = (fontSize: number) => {
+    if (!sideBarBookKey) return;
+    const viewSettings = getViewSettings(sideBarBookKey);
+    if (!viewSettings) return;
+    const minSize = Math.max(
+      FONT_SIZE_LIMITS.MIN,
+      viewSettings.minimumFontSize ?? FONT_SIZE_LIMITS.MIN,
+    );
+    const clamped = Math.max(
+      minSize,
+      Math.min(FONT_SIZE_LIMITS.MAX, Math.round(fontSize)),
+    );
+    if (clamped === viewSettings.defaultFontSize) return;
+    saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', clamped, true);
+  };
+
+  const isFixedLayout = () => !!getBookData(sideBarBookKey ?? '')?.isFixedLayout;
+
   const zoomInFactor = (factor = 1.0) => {
     if (!sideBarBookKey) return;
     const viewSettings = getViewSettings(sideBarBookKey)!;
+    if (!isFixedLayout()) {
+      applyFontSize(viewSettings.defaultFontSize + factor);
+      return;
+    }
     const zoomLevel = viewSettings!.zoomLevel + ZOOM_STEP * factor;
     applyZoomLevel(Math.min(zoomLevel, MAX_ZOOM_LEVEL));
   };
@@ -307,6 +329,10 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
   const zoomOutFactor = (factor = 1.0) => {
     if (!sideBarBookKey) return;
     const viewSettings = getViewSettings(sideBarBookKey)!;
+    if (!isFixedLayout()) {
+      applyFontSize(viewSettings.defaultFontSize - factor);
+      return;
+    }
     const zoomLevel = viewSettings!.zoomLevel - ZOOM_STEP * factor;
     applyZoomLevel(Math.max(zoomLevel, MIN_ZOOM_LEVEL));
   };
@@ -347,7 +373,7 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
       size = next;
     }
     if (size !== initialSize) {
-      saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size);
+      saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);
     }
   };
 
@@ -371,6 +397,10 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
 
   const resetZoom = () => {
     if (!sideBarBookKey) return;
+    if (!isFixedLayout()) {
+      applyFontSize(settings.globalViewSettings?.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT);
+      return;
+    }
     applyZoomLevel(100);
   };
 

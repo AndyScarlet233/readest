@@ -49,6 +49,10 @@ import {
   type NarratedAudioChapter,
 } from './pairedAudiobook';
 import { SKIP_BACKWARD_SEC, SKIP_FORWARD_SEC } from '@/services/playback/playbackSource';
+import {
+  stripInlineReadingAnnotations,
+  stripInlineReadingAnnotationsFromSSML,
+} from './inlineAnnotations';
 
 // App-wide monotonic sequence for 'tts-position' events. A fresh TTSController
 // is constructed per `tts-speak`, so a per-instance counter would restart at 0
@@ -147,6 +151,7 @@ export class TTSController extends EventTarget {
   #awaitingAudio = false;
   #ttsDoc: Document | null = null;
   #ttsGranularity: TTSGranularity = 'sentence';
+  #skipInlineAnnotations = false;
 
   // Word-level highlight state for the currently spoken chunk. Armed by a
   // successful dispatchSpeakMark, populated by prepareSpeakWords when a TTS
@@ -612,6 +617,31 @@ export class TTSController extends EventTarget {
     this.#highlightGranularity = granularity;
   }
 
+  setSkipInlineAnnotations(enabled: boolean) {
+    if (this.#skipInlineAnnotations === enabled) return;
+    this.#skipInlineAnnotations = enabled;
+    this.#sectionTimeline = null;
+    this.#timelineSectionIndex = -1;
+  }
+
+  // The reader's visible section can intentionally diverge from the section
+  // queued by Read Aloud (for example while paused at a chapter boundary).
+  // Expose the session cursor so player surfaces never have to infer it from
+  // reader progress.
+  getSectionIndex(): number | null {
+    return this.#ttsSectionIndex >= 0 ? this.#ttsSectionIndex : null;
+  }
+
+  #setSectionIndex(sectionIndex: number) {
+    if (this.#ttsSectionIndex === sectionIndex) return;
+    this.#ttsSectionIndex = sectionIndex;
+    this.dispatchEvent(
+      new CustomEvent('tts-section-change', {
+        detail: { sectionIndex },
+      }),
+    );
+  }
+
   async initViewTTS(index?: number) {
     if (this.#ttsSectionIndex === -1) {
       const fromSectionIndex = (index || this.#getPrimaryContent()?.index) ?? 0;
@@ -663,7 +693,7 @@ export class TTSController extends EventTarget {
     // are still rendering the outgoing section.
     this.#clearAllHighlights();
 
-    this.#ttsSectionIndex = sectionIndex;
+    this.#setSectionIndex(sectionIndex);
 
     const currentSection = this.#getPrimaryContent();
     if (currentSection?.index !== sectionIndex) {
@@ -788,7 +818,11 @@ export class TTSController extends EventTarget {
         createTTSNodeFilter(),
         this.#ttsGranularity,
       )) {
-        sentences.push({ ...entry, text: entry.range.toString() });
+        const text = entry.range.toString();
+        sentences.push({
+          ...entry,
+          text: this.#skipInlineAnnotations ? stripInlineReadingAnnotations(text) : text,
+        });
       }
     }
     // The section moved on while this was being enumerated: these sentences
@@ -1432,6 +1466,10 @@ export class TTSController extends EventTarget {
       ssml = await this.preprocessCallback(ssml);
     }
 
+    if (this.#skipInlineAnnotations) {
+      ssml = stripInlineReadingAnnotationsFromSSML(ssml);
+    }
+
     return ssml;
   }
 
@@ -1661,7 +1699,14 @@ export class TTSController extends EventTarget {
     await this.stop(isPlaying);
     if (!isPlaying) this.state = 'backward-paused';
 
-    const ssml = byMark ? this.#getTts()?.prevMark(!isPlaying) : this.#getTts()?.prev(!isPlaying);
+    const tts = this.#getTts();
+    // Mark navigation needs a current paragraph. resume() positions a fresh
+    // iterator without resetting an existing position; empty sections return no SSML.
+    const ssml = byMark
+      ? tts?.resume()
+        ? tts.prevMark(!isPlaying)
+        : undefined
+      : tts?.prev(!isPlaying);
     if (!ssml) {
       await this.#handleNavigationWithoutSSML(() => this.#initTTSForPrevSection(), isPlaying);
     } else {
@@ -1690,7 +1735,14 @@ export class TTSController extends EventTarget {
     await this.stop(isPlaying);
     if (!isPlaying) this.state = 'forward-paused';
 
-    const ssml = byMark ? this.#getTts()?.nextMark(!isPlaying) : this.#getTts()?.next(!isPlaying);
+    const tts = this.#getTts();
+    // Mark navigation needs a current paragraph. resume() positions a fresh
+    // iterator without resetting an existing position; empty sections return no SSML.
+    const ssml = byMark
+      ? tts?.resume()
+        ? tts.nextMark(!isPlaying)
+        : undefined
+      : tts?.next(!isPlaying);
     if (!ssml) {
       if (isAutoAdvance && isPlaying && this.stopAtChapterEnd) {
         return await this.#stopAtChapterBoundary();
