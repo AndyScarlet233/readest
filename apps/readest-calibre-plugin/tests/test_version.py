@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -5,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from sync_version import app_version, plugin_version, sync  # noqa: E402
+from sync_version import app_version, app_version_string, plugin_version, sync  # noqa: E402
 
 
 class PluginVersionTest(unittest.TestCase):
@@ -19,6 +20,15 @@ class PluginVersionTest(unittest.TestCase):
         version = app_version()
         self.assertEqual(len(version), 3)
         self.assertTrue(all(isinstance(part, int) for part in version))
+
+    def test_fork_prerelease_keeps_release_string_and_numeric_calibre_core(self):
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(os.unlink, path)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'version': '0.12.8-fork.1'}, f)
+        self.assertEqual(app_version_string(path), '0.12.8-fork.1')
+        self.assertEqual(app_version(path), (0, 12, 8))
 
 
 class SyncTest(unittest.TestCase):
