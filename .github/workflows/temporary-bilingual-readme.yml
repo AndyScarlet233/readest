@@ -1,3 +1,4 @@
+# Temporary one-shot workflow. It deletes itself after a successful migration.
 name: Temporary bilingual README migration
 
 on:
