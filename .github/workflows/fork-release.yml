@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: fork-release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   prepare:
