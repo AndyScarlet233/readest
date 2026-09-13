@@ -1,5 +1,15 @@
 {
   "releases": {
+    "0.12.8-fork.1": {
+      "date": "2026-09-13",
+      "notes": [
+        "Fork：基于官方 Readest 0.12.8，同步上游的新功能与修复",
+        "同步：解除 WebDAV、Google Drive、S3、OneDrive 等第三方同步的 Premium 限制，继续使用用户自己的存储服务",
+        "TTS：解除离线语音缓存与预下载的 Premium 限制",
+        "局域网：解除 Nearby BookDrop 可信设备配对限制",
+        "边界：不解锁 Readest Cloud 存储、服务器翻译额度、Send to Readest 邮件等依赖官方服务器资源的功能"
+      ]
+    },
     "0.12.8": {
       "date": "2026-09-08",
       "notes": [
@@ -712,7 +722,9 @@
     },
     "0.9.57": {
       "date": "2025-06-14",
-      "notes": ["TTS: Fixed an issue to detect custom TTS engines on some Android devices"]
+      "notes": [
+        "TTS: Fixed an issue to detect custom TTS engines on some Android devices"
+      ]
     },
     "0.9.56": {
       "date": "2025-06-13",
@@ -1086,7 +1098,10 @@
     },
     "0.9.6": {
       "date": "2025-01-18",
-      "notes": ["Various enhancements for mobile platforms", "Fix DeepL translation API"]
+      "notes": [
+        "Various enhancements for mobile platforms",
+        "Fix DeepL translation API"
+      ]
     },
     "0.9.5": {
       "date": "2025-01-15",

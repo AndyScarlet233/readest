@@ -42,6 +42,22 @@
   </a>
 </div>
 
+## 本分支版本下载
+
+本仓库提供两条不同的发布路线。它们都基于 Readest 开源代码，但侧重点不同，请按自己的需求选择。
+
+### 0.12.8-fork.1 — 跟进上游 / 解锁非云端付费功能
+
+[下载 0.12.8-fork.1](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.8-fork.1)
+
+基于官方 Readest 0.12.8。保留新版上游功能与后续同步能力，并解除 WebDAV、Google Drive、S3、OneDrive 等第三方同步、TTS 离线缓存以及 Nearby BookDrop 可信设备配对等不依赖官方服务器资源的 Premium 限制。Readest Cloud 存储空间、服务器翻译额度、Send to Readest 邮件等需要官方云端资源的功能仍按原规则工作。此版本是目前主要维护路线。
+
+### v0.12.6.22 — 完整局域网书籍同步版 / 暂停开发
+
+[下载 v0.12.6.22](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.6.22)
+
+这是 0.12.6 系列最后一个公开版本，包含一套完整的局域网书籍同步机制，适合希望在自己的设备之间直接同步书籍的用户。由于这套机制涉及较多底层同步改动，跟随上游持续更新时适配成本较高，目前暂停继续开发。现有版本与 Release 会继续保留，方便需要这套局域网同步方案的用户使用。
+
 ## Features
 
 <div align="left">✅ Implemented</div>
