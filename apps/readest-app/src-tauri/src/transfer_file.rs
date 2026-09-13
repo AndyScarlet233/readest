@@ -23,6 +23,15 @@ use std::{collections::HashMap, sync::Arc};
 
 type Result<T> = std::result::Result<T, Error>;
 
+// Small uploads are more reliable as one native reqwest body than as a wrapped
+// async file stream on Android/Windows WebViews. Keep large books streaming so
+// a PDF cannot force tens or hundreds of MiB into memory at once.
+const BUFFERED_UPLOAD_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
+fn should_buffer_upload(file_len: u64) -> bool {
+    file_len <= BUFFERED_UPLOAD_MAX_BYTES
+}
+
 // The TransferStats struct tracks both transfer speed and cumulative transfer progress.
 pub struct TransferStats {
     accumulated_chunk_len: usize, // Total length of chunks transferred in the current period
@@ -339,8 +348,9 @@ pub async fn upload_file<R: tauri::Runtime>(
 ) -> Result<String> {
     ensure_path_allowed(&app, file_path)?;
 
-    let file = File::open(file_path).await?;
-    let file_len = file.metadata().await.unwrap().len();
+    let file_len = tokio::fs::metadata(file_path).await?.len();
+    let buffered = should_buffer_upload(file_len);
+    let started_at = Instant::now();
 
     let client = reqwest::Client::new();
     let mut request = match method.to_uppercase().as_str() {
@@ -349,9 +359,16 @@ pub async fn upload_file<R: tauri::Runtime>(
         _ => return Err(Error::ContentLength("Invalid HTTP method".into())),
     };
 
+    let body = if buffered {
+        reqwest::Body::from(tokio::fs::read(file_path).await?)
+    } else {
+        let file = File::open(file_path).await?;
+        file_to_body(on_progress.clone(), file, file_len)
+    };
+
     request = request
         .header(reqwest::header::CONTENT_LENGTH, file_len)
-        .body(file_to_body(on_progress.clone(), file, file_len));
+        .body(body);
 
     for (key, value) in headers {
         request = request.header(&key, value);
@@ -359,6 +376,19 @@ pub async fn upload_file<R: tauri::Runtime>(
 
     let response = request.send().await?;
     if response.status().is_success() {
+        if buffered {
+            let elapsed = started_at.elapsed().as_secs_f64();
+            let transfer_speed = if elapsed > 0.0 {
+                (file_len as f64 / elapsed) as u64
+            } else {
+                file_len
+            };
+            let _ = on_progress.send(ProgressPayload {
+                progress: file_len,
+                total: file_len,
+                transfer_speed,
+            });
+        }
         response.text().await.map_err(Into::into)
     } else {
         Err(Error::HttpErrorCode(
@@ -387,7 +417,17 @@ fn file_to_body(channel: Channel<ProgressPayload>, file: File, file_len: u64) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{has_disallowed_components, is_within_app_storage};
+    use super::{
+        has_disallowed_components, is_within_app_storage, should_buffer_upload,
+        BUFFERED_UPLOAD_MAX_BYTES,
+    };
+
+    #[test]
+    fn small_uploads_use_buffered_native_body() {
+        assert!(should_buffer_upload(742 * 1024));
+        assert!(should_buffer_upload(BUFFERED_UPLOAD_MAX_BYTES));
+        assert!(!should_buffer_upload(BUFFERED_UPLOAD_MAX_BYTES + 1));
+    }
 
     #[test]
     fn app_storage_fallback_accepts_app_paths() {
