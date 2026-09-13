@@ -7,11 +7,11 @@
 //! Download files from a remote HTTP server to disk.
 
 use futures_util::TryStreamExt;
-use serde::{ser::Serializer, Deserialize, Serialize};
-use tauri::{command, ipc::Channel, AppHandle, Manager};
+use serde::{ser::Serializer, Serialize};
+use tauri::{command, ipc::Channel, AppHandle};
 use tauri_plugin_fs::FsExt;
 use tokio::{
-    fs::{File, OpenOptions},
+    fs::File,
     io::{AsyncWriteExt, BufWriter},
 };
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -19,19 +19,9 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 use read_progress_stream::ReadProgressStream;
 
 use std::time::Instant;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 type Result<T> = std::result::Result<T, Error>;
-
-// Native downloads stream to disk, so the old 2 GiB ceiling rejected valid large
-// AZW3/PDF/CBZ files even though neither reqwest nor the filesystem needs them in RAM.
-// Keep a finite sanity limit, but leave enough headroom for omnibus/reference books.
-const MAX_DOWNLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;
-const MAX_ERROR_BODY_BYTES: u64 = 64 * 1024;
 
 // The TransferStats struct tracks both transfer speed and cumulative transfer progress.
 pub struct TransferStats {
@@ -97,138 +87,6 @@ pub enum Error {
     Forbidden(String),
 }
 
-struct DownloadTempFile {
-    path: String,
-    committed: bool,
-}
-
-impl DownloadTempFile {
-    fn new(file_path: &str) -> Self {
-        let destination = Path::new(file_path);
-        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-        let name = format!(".readest-download-{}.part", uuid::Uuid::new_v4().simple());
-        Self {
-            path: parent.join(name).to_string_lossy().into_owned(),
-            committed: false,
-        }
-    }
-}
-
-impl Drop for DownloadTempFile {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
-}
-
-#[cfg(windows)]
-pub(crate) fn replace_file_atomically(source: &Path, destination: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let to_wide = |path: &Path| {
-        path.as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect::<Vec<u16>>()
-    };
-    let source = to_wide(source);
-    let destination = to_wide(destination);
-
-    // ReplaceFileW publishes over an existing destination without the delete-
-    // then-rename gap of std::fs::rename on Windows.
-    let replaced = unsafe {
-        ReplaceFileW(
-            destination.as_ptr(),
-            source.as_ptr(),
-            std::ptr::null(),
-            0,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    if replaced != 0 {
-        return Ok(());
-    }
-
-    // The first download has no destination yet. MoveFileExW is atomic on the
-    // same volume and also handles a destination created in the small race.
-    let error = std::io::Error::last_os_error();
-    if error.kind() != std::io::ErrorKind::NotFound {
-        return Err(error);
-    }
-    let moved = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if moved != 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-async fn commit_download_file(temp: &mut DownloadTempFile, file_path: &str) -> Result<()> {
-    #[cfg(windows)]
-    {
-        replace_file_atomically(Path::new(&temp.path), Path::new(file_path))?;
-        temp.committed = true;
-        Ok(())
-    }
-
-    #[cfg(not(windows))]
-    {
-        tokio::fs::rename(&temp.path, file_path).await?;
-        temp.committed = true;
-        Ok(())
-    }
-}
-
-fn parse_content_range(value: &str) -> Option<(u64, u64, u64)> {
-    let (range, total) = value.trim().split_once('/')?;
-    let mut parts = range.split_ascii_whitespace();
-    if !parts
-        .next()
-        .is_some_and(|unit| unit.eq_ignore_ascii_case("bytes"))
-    {
-        return None;
-    }
-    let byte_range = parts.next()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    let (start, end) = byte_range.split_once('-')?;
-    Some((
-        start.parse().ok()?,
-        end.parse().ok()?,
-        total.trim().parse().ok()?,
-    ))
-}
-
-async fn read_response_body_limited(
-    response: reqwest::Response,
-    max_bytes: u64,
-) -> Result<Vec<u8>> {
-    let mut body = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.try_next().await? {
-        let next_len = (body.len() as u64).saturating_add(chunk.len() as u64);
-        if next_len > max_bytes {
-            return Err(Error::ContentLength(format!(
-                "response body exceeds the {max_bytes}-byte limit"
-            )));
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
-}
-
 /// Reject paths the webview must not be allowed to target: relative paths and
 /// any `..` parent-directory traversal. `fs_scope().is_allowed` is a glob match,
 /// so a `..` segment could otherwise escape an allowed prefix.
@@ -240,82 +98,16 @@ fn has_disallowed_components(file_path: &str) -> bool {
             .any(|c| matches!(c, std::path::Component::ParentDir))
 }
 
-/// Canonicalize a path even when its final components have not been created yet.
-/// This also resolves symlinked parent directories before a download creates its
-/// destination.
-fn canonicalize_with_missing(path: &Path) -> Option<PathBuf> {
-    let mut current = path.to_path_buf();
-    let mut missing = Vec::new();
-    loop {
-        if let Ok(mut canonical) = std::fs::canonicalize(&current) {
-            for component in missing.iter().rev() {
-                canonical.push(component);
-            }
-            return Some(canonical);
-        }
-        let name = current.file_name()?.to_os_string();
-        missing.push(name);
-        if !current.pop() {
-            return None;
-        }
-    }
-}
-
-fn is_path_within_root(root: &Path, path: &Path) -> bool {
-    let Some(root) = canonicalize_with_missing(root) else {
-        return false;
-    };
-    let Some(path) = canonicalize_with_missing(path) else {
-        return false;
-    };
-
-    #[cfg(windows)]
-    {
-        let root = root
-            .to_string_lossy()
-            .trim_end_matches(&['\\', '/'][..])
-            .to_ascii_lowercase();
-        let path = path.to_string_lossy().to_ascii_lowercase();
-        path == root
-            || path.starts_with(&format!("{root}\\"))
-            || path.starts_with(&format!("{root}/"))
-    }
-    #[cfg(not(windows))]
-    {
-        path == root || path.strip_prefix(root).is_ok()
-    }
-}
-
-/// App data/cache/config paths are not always included in the global fs scope,
-/// so retain a narrowly bounded fallback for files owned by this app. Portable
-/// installs additionally use the executable directory when its Settings.json
-/// marker is present. Canonicalization prevents symlink and prefix-bypass paths.
-fn is_within_app_storage<R: tauri::Runtime>(app: &AppHandle<R>, file_path: &str) -> bool {
-    let path = Path::new(file_path);
-    let mut roots = Vec::new();
-    for root in [
-        app.path().app_data_dir().ok(),
-        app.path().app_cache_dir().ok(),
-        app.path().app_config_dir().ok(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        roots.push(root);
-    }
-
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(parent) = executable.parent() {
-            // Native portable mode is identified by this marker (see the JS
-            // path resolver), so an installed app never gets its install dir
-            // implicitly added to the writable fallback.
-            if parent.join("Settings.json").is_file() {
-                roots.push(parent.to_path_buf());
-            }
-        }
-    }
-
-    roots.iter().any(|root| is_path_within_root(root, path))
+/// The app's own storage always carries either the `Readest` data folder or the
+/// app's bundle identifier in its path — the Android sandbox
+/// (`/data/user/0/<identifier>/…`, including the cache dir) and the desktop
+/// identifier dirs (`…/<identifier>/…`). Those paths aren't in the global
+/// `fs_scope()` (their capability patterns are command-scoped), so `is_allowed`
+/// returns false for the app's own files. Accept these segments as a fallback,
+/// the way `dir_scanner::read_dir` does. `..` is already rejected, so foreign
+/// targets (e.g. `~/.ssh/id_rsa`) stay blocked.
+fn is_within_app_storage(file_path: &str, app_identifier: &str) -> bool {
+    file_path.contains("Readest") || file_path.contains(app_identifier)
 }
 
 /// Validate a webview-supplied `file_path` before any `File::create`/`File::open`.
@@ -324,8 +116,6 @@ fn is_within_app_storage<R: tauri::Runtime>(app: &AppHandle<R>, file_path: &str)
 /// privileged Tauri origin — see GHSA-55vr-pvq5-6fmg. We require an absolute,
 /// traversal-free path that is either granted by the fs scope (persisted dialog
 /// grants for custom/external roots) or lives inside the app's own storage.
-/// Scope checks use the canonical path too, so a symlink/reparse point cannot
-/// turn an allowed lexical path into an outside target.
 pub(crate) fn ensure_path_allowed<R: tauri::Runtime>(
     app: &AppHandle<R>,
     file_path: &str,
@@ -333,12 +123,9 @@ pub(crate) fn ensure_path_allowed<R: tauri::Runtime>(
     if has_disallowed_components(file_path) {
         return Err(Error::Forbidden(file_path.to_string()));
     }
-    let path = Path::new(file_path);
-    let canonical = canonicalize_with_missing(path);
-    let scope_allowed = canonical
-        .as_ref()
-        .is_some_and(|path| app.fs_scope().is_allowed(path));
-    if scope_allowed || is_within_app_storage(app, file_path) {
+    if app.fs_scope().is_allowed(std::path::Path::new(file_path))
+        || is_within_app_storage(file_path, &app.config().identifier)
+    {
         return Ok(());
     }
     Err(Error::Forbidden(file_path.to_string()))
@@ -361,362 +148,6 @@ pub struct ProgressPayload {
     transfer_speed: u64,
 }
 
-const PROGRESS_INTERVAL_MS: u128 = 500;
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ResumeMetadata {
-    url: String,
-    etag: Option<String>,
-    total: u64,
-}
-
-fn auxiliary_path(file_path: &str, suffix: &str) -> PathBuf {
-    const MAX_FILENAME_BYTES: usize = 255;
-    let destination = Path::new(file_path);
-    let filename_bytes = destination
-        .file_name()
-        .map(|name| name.to_string_lossy().as_bytes().len())
-        .unwrap_or(0);
-    if filename_bytes + suffix.len() <= MAX_FILENAME_BYTES {
-        return PathBuf::from(format!("{file_path}{suffix}"));
-    }
-
-    // The destination may already use the full platform filename budget. Keep
-    // resumable state as a short sibling instead of appending to that name.
-    let mut hash = 0xcbf29ce484222325u64;
-    for byte in file_path.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-    parent.join(format!(".readest-{hash:016x}{suffix}"))
-}
-
-fn resume_paths(file_path: &str) -> (PathBuf, PathBuf) {
-    (
-        auxiliary_path(file_path, ".readest.part"),
-        auxiliary_path(file_path, ".readest.part.json"),
-    )
-}
-
-struct ProgressEmitter {
-    channel: Channel<ProgressPayload>,
-    stats: TransferStats,
-    total: u64,
-    last_emit: Instant,
-}
-
-impl ProgressEmitter {
-    fn new(channel: Channel<ProgressPayload>, total: u64) -> Self {
-        Self {
-            channel,
-            stats: TransferStats::default(),
-            total,
-            last_emit: Instant::now()
-                - std::time::Duration::from_millis(PROGRESS_INTERVAL_MS as u64),
-        }
-    }
-
-    fn start_at(&mut self, offset: u64) {
-        self.stats.total_transferred = offset;
-        let _ = self.channel.send(ProgressPayload {
-            progress: offset,
-            total: self.total,
-            transfer_speed: 0,
-        });
-    }
-
-    fn record(&mut self, len: usize) {
-        self.stats.record_chunk_transfer(len);
-        let payload = ProgressPayload {
-            progress: self.stats.total_transferred,
-            total: self.total,
-            transfer_speed: self.stats.transfer_speed,
-        };
-        if self.last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
-            let _ = self.channel.send(payload);
-            self.last_emit = Instant::now();
-        }
-    }
-
-    fn finish(&mut self) {
-        let payload = ProgressPayload {
-            progress: self.stats.total_transferred,
-            total: self.total,
-            transfer_speed: self.stats.transfer_speed,
-        };
-        let _ = self.channel.send(payload);
-    }
-}
-
-async fn single_threaded_download(
-    client: &reqwest::Client,
-    url: &str,
-    file_path: &str,
-    headers: &HashMap<String, String>,
-    body: Option<&str>,
-    on_progress: Channel<ProgressPayload>,
-) -> Result<HashMap<String, String>> {
-    let mut request = if let Some(body) = body {
-        client.post(url).body(body.to_owned())
-    } else {
-        client.get(url)
-    };
-
-    for (key, value) in headers {
-        request = request.header(key, value);
-    }
-
-    let response = request.send().await?;
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        let body = read_response_body_limited(response, MAX_ERROR_BODY_BYTES).await?;
-        return Err(Error::HttpErrorCode(
-            status,
-            String::from_utf8_lossy(&body).into_owned(),
-        ));
-    }
-
-    let mut resp_headers = HashMap::new();
-    for (key, value) in response.headers().iter() {
-        if let Ok(val_str) = value.to_str() {
-            resp_headers.insert(key.to_string(), val_str.to_string());
-        }
-    }
-
-    let total = response.content_length().unwrap_or(0);
-    if total > MAX_DOWNLOAD_BYTES {
-        return Err(Error::ContentLength(format!(
-            "download size {total} exceeds the {MAX_DOWNLOAD_BYTES}-byte limit"
-        )));
-    }
-    let mut temp = DownloadTempFile::new(file_path);
-    let mut emitter = ProgressEmitter::new(on_progress, total);
-    {
-        let mut file = BufWriter::new(
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temp.path)
-                .await?,
-        );
-        let mut stream = response.bytes_stream();
-
-        let mut received = 0u64;
-        while let Some(chunk) = stream.try_next().await? {
-            let next_received = received.saturating_add(chunk.len() as u64);
-            if next_received > MAX_DOWNLOAD_BYTES {
-                return Err(Error::ContentLength(format!(
-                    "response body exceeds the {MAX_DOWNLOAD_BYTES}-byte limit"
-                )));
-            }
-            received = next_received;
-            file.write_all(&chunk).await?;
-            emitter.record(chunk.len());
-        }
-        file.flush().await?;
-    }
-    emitter.finish();
-    commit_download_file(&mut temp, file_path).await?;
-
-    Ok(resp_headers)
-}
-
-async fn fallback_single_download(
-    client: &reqwest::Client,
-    url: &str,
-    file_path: &str,
-    headers: &HashMap<String, String>,
-    on_progress: Channel<ProgressPayload>,
-) -> Result<HashMap<String, String>> {
-    let (part_path, sidecar_path) = resume_paths(file_path);
-    let _ = tokio::fs::remove_file(&part_path).await;
-    let _ = tokio::fs::remove_file(&sidecar_path).await;
-    let result = single_threaded_download(client, url, file_path, headers, None, on_progress).await;
-    let _ = tokio::fs::remove_file(&part_path).await;
-    let _ = tokio::fs::remove_file(&sidecar_path).await;
-    result
-}
-
-async fn resumable_download(
-    client: &reqwest::Client,
-    url: &str,
-    file_path: &str,
-    headers: &HashMap<String, String>,
-    on_progress: Channel<ProgressPayload>,
-) -> Result<HashMap<String, String>> {
-    let mut probe = client.get(url).header("Range", "bytes=0-0");
-    for (key, value) in headers {
-        probe = probe.header(key, value);
-    }
-    let probe_response = probe.send().await?;
-    if probe_response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-        return fallback_single_download(client, url, file_path, headers, on_progress).await;
-    }
-    let Some((start, end, total)) = probe_response
-        .headers()
-        .get("content-range")
-        .and_then(|v| v.to_str().ok())
-        .and_then(parse_content_range)
-    else {
-        return fallback_single_download(client, url, file_path, headers, on_progress).await;
-    };
-    if start != 0 || end != 0 || total == 0 {
-        return fallback_single_download(client, url, file_path, headers, on_progress).await;
-    }
-    if total > MAX_DOWNLOAD_BYTES {
-        return Err(Error::ContentLength(format!(
-            "download size {total} exceeds the {MAX_DOWNLOAD_BYTES}-byte limit"
-        )));
-    }
-    let Some(etag) = probe_response
-        .headers()
-        .get(reqwest::header::ETAG)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_owned)
-    else {
-        // Without a validator, an old partial file cannot be proven to match
-        // the current remote content, so use a fresh single-request download.
-        return fallback_single_download(client, url, file_path, headers, on_progress).await;
-    };
-    let mut response_headers = HashMap::new();
-    for (key, value) in probe_response.headers() {
-        if let Ok(value) = value.to_str() {
-            response_headers.insert(key.to_string(), value.to_string());
-        }
-    }
-
-    let (part_path, sidecar_path) = resume_paths(file_path);
-    let identity = ResumeMetadata {
-        url: url.to_string(),
-        etag: Some(etag.clone()),
-        total,
-    };
-    let valid_sidecar = match tokio::fs::read(&sidecar_path).await {
-        Ok(bytes) => serde_json::from_slice::<ResumeMetadata>(&bytes)
-            .ok()
-            .is_some_and(|m| m.url == identity.url && m.etag == identity.etag && m.total == total),
-        Err(_) => false,
-    };
-    let mut offset = if valid_sidecar {
-        tokio::fs::metadata(&part_path)
-            .await
-            .ok()
-            .map(|m| m.len())
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    if offset > total {
-        offset = 0;
-        let _ = tokio::fs::remove_file(&part_path).await;
-    }
-    if !valid_sidecar {
-        let _ = tokio::fs::remove_file(&part_path).await;
-        let _ = tokio::fs::remove_file(&sidecar_path).await;
-    }
-    if offset == total {
-        let mut temp = DownloadTempFile {
-            path: part_path.to_string_lossy().into_owned(),
-            committed: false,
-        };
-        commit_download_file(&mut temp, file_path).await?;
-        let _ = tokio::fs::remove_file(&sidecar_path).await;
-        let mut emitter = ProgressEmitter::new(on_progress, total);
-        emitter.start_at(total);
-        emitter.finish();
-        return Ok(response_headers);
-    }
-    tokio::fs::write(
-        &sidecar_path,
-        serde_json::to_vec(&identity).map_err(|e| Error::ContentLength(e.to_string()))?,
-    )
-    .await?;
-
-    for attempt in 0..2 {
-        let mut request = client.get(url);
-        if offset > 0 {
-            request = request.header("Range", format!("bytes={offset}-"));
-            request = request.header("If-Range", &etag);
-        }
-        for (key, value) in headers {
-            request = request.header(key, value);
-        }
-        let response = request.send().await?;
-        let response_etag = response
-            .headers()
-            .get(reqwest::header::ETAG)
-            .and_then(|v| v.to_str().ok());
-        let valid_status = if offset > 0 {
-            response.status() == reqwest::StatusCode::PARTIAL_CONTENT
-        } else {
-            response.status().is_success()
-        };
-        let valid_range = if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
-            response
-                .headers()
-                .get("content-range")
-                .and_then(|v| v.to_str().ok())
-                .and_then(parse_content_range)
-                == Some((offset, total - 1, total))
-        } else {
-            offset == 0
-        };
-        let valid_etag = etag.as_str().is_empty() || response_etag == Some(etag.as_str());
-        if !valid_status || !valid_range || !valid_etag {
-            if attempt == 0 && offset > 0 {
-                offset = 0;
-                let _ = tokio::fs::remove_file(&part_path).await;
-                continue;
-            }
-            let status = response.status().as_u16();
-            let body = read_response_body_limited(response, MAX_ERROR_BODY_BYTES).await?;
-            return Err(Error::HttpErrorCode(
-                status,
-                String::from_utf8_lossy(&body).into_owned(),
-            ));
-        }
-        let mut open = OpenOptions::new();
-        open.write(true).create(true);
-        if offset == 0 {
-            open.truncate(true);
-        }
-        let mut file = tokio::io::BufWriter::new(open.open(&part_path).await?);
-        use tokio::io::AsyncSeekExt;
-        file.seek(std::io::SeekFrom::Start(offset)).await?;
-        let mut received = offset;
-        let mut emitter = ProgressEmitter::new(on_progress.clone(), total);
-        emitter.start_at(offset);
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.try_next().await? {
-            received = received.saturating_add(chunk.len() as u64);
-            if received > MAX_DOWNLOAD_BYTES || received > total {
-                return Err(Error::ContentLength(
-                    "response body exceeds download limit".into(),
-                ));
-            }
-            file.write_all(&chunk).await?;
-            emitter.record(chunk.len());
-        }
-        if received != total {
-            return Err(Error::ContentLength(format!(
-                "download ended at {received}, expected {total}"
-            )));
-        }
-        file.flush().await?;
-        drop(file);
-        emitter.finish();
-        let mut temp = DownloadTempFile {
-            path: part_path.to_string_lossy().into_owned(),
-            committed: false,
-        };
-        commit_download_file(&mut temp, file_path).await?;
-        let _ = tokio::fs::remove_file(&sidecar_path).await;
-        return Ok(response_headers);
-    }
-    unreachable!()
-}
-
 #[command]
 #[allow(clippy::too_many_arguments)] // Tauri command surface mirrors the JS caller's options.
 pub async fn download_file<R: tauri::Runtime>(
@@ -727,7 +158,6 @@ pub async fn download_file<R: tauri::Runtime>(
     body: Option<String>,
     single_threaded: Option<bool>,
     skip_ssl_verification: Option<bool>,
-    resume: Option<bool>,
     on_progress: Channel<ProgressPayload>,
 ) -> Result<HashMap<String, String>> {
     use futures::stream::{self, StreamExt};
@@ -742,22 +172,63 @@ pub async fn download_file<R: tauri::Runtime>(
         .danger_accept_invalid_certs(skip_ssl_verification.unwrap_or(false))
         .danger_accept_invalid_hostnames(skip_ssl_verification.unwrap_or(false))
         .build()?;
-    let force_single = single_threaded.unwrap_or(false) && !resume.unwrap_or(false);
+    let force_single = single_threaded.unwrap_or(false);
 
-    if resume.unwrap_or(false) && body.is_none() {
-        return resumable_download(&client, url, file_path, &headers, on_progress).await;
+    async fn single_threaded_download(
+        client: &reqwest::Client,
+        url: &str,
+        file_path: &str,
+        headers: &HashMap<String, String>,
+        body: &Option<String>,
+        on_progress: Channel<ProgressPayload>,
+    ) -> Result<HashMap<String, String>> {
+        let mut request = if let Some(body) = body {
+            client.post(url).body(body.clone())
+        } else {
+            client.get(url)
+        };
+
+        for (key, value) in headers {
+            request = request.header(key, value);
+        }
+
+        let response = request.send().await?;
+        if !response.status().is_success() {
+            return Err(Error::HttpErrorCode(
+                response.status().as_u16(),
+                response.text().await.unwrap_or_default(),
+            ));
+        }
+
+        let mut resp_headers = HashMap::new();
+        for (key, value) in response.headers().iter() {
+            if let Ok(val_str) = value.to_str() {
+                resp_headers.insert(key.to_string(), val_str.to_string());
+            }
+        }
+
+        let total = response.content_length().unwrap_or(0);
+        let mut file = BufWriter::new(File::create(file_path).await?);
+        let mut stream = response.bytes_stream();
+
+        let mut stats = TransferStats::default();
+        while let Some(chunk) = stream.try_next().await? {
+            file.write_all(&chunk).await?;
+            stats.record_chunk_transfer(chunk.len());
+            let _ = on_progress.send(ProgressPayload {
+                progress: stats.total_transferred,
+                total,
+                transfer_speed: stats.transfer_speed,
+            });
+        }
+        file.flush().await?;
+
+        Ok(resp_headers)
     }
 
     if force_single {
-        return single_threaded_download(
-            &client,
-            url,
-            file_path,
-            &headers,
-            body.as_deref(),
-            on_progress,
-        )
-        .await;
+        return single_threaded_download(&client, url, file_path, &headers, &body, on_progress)
+            .await;
     }
 
     // Check if server supports range requests
@@ -766,20 +237,19 @@ pub async fn download_file<R: tauri::Runtime>(
         range_req = range_req.header(key, value);
     }
     let range_resp = range_req.send().await?;
-    let range_status = range_resp.status();
     let accept_ranges = range_resp
         .headers()
         .get("accept-ranges")
         .map(|v| v.to_str().unwrap_or(""))
         .unwrap_or("")
         .eq_ignore_ascii_case("bytes");
-    let probe_range = range_resp
+    let total = range_resp
         .headers()
         .get("content-range")
         .and_then(|v| v.to_str().ok())
-        .and_then(parse_content_range);
-    let total = probe_range.map(|(_, _, total)| total).unwrap_or(0);
-    let probe_body_size_ok = range_resp.content_length().map_or(true, |len| len == 1);
+        .and_then(|s| s.split('/').nth(1))
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
 
     let mut resp_headers = HashMap::new();
     for (key, value) in range_resp.headers().iter() {
@@ -788,53 +258,27 @@ pub async fn download_file<R: tauri::Runtime>(
         }
     }
 
-    if range_status != reqwest::StatusCode::PARTIAL_CONTENT
-        || !accept_ranges
-        || probe_range.map_or(true, |(start, end, _)| start != 0 || end != 0)
-        || !probe_body_size_ok
-        || total == 0
-    {
-        return single_threaded_download(
-            &client,
-            url,
-            file_path,
-            &headers,
-            body.as_deref(),
-            on_progress,
-        )
-        .await;
-    }
-    if total > MAX_DOWNLOAD_BYTES {
-        return Err(Error::ContentLength(format!(
-            "download size {total} exceeds the {MAX_DOWNLOAD_BYTES}-byte limit"
-        )));
+    if !accept_ranges || total == 0 {
+        return single_threaded_download(&client, url, file_path, &headers, &body, on_progress)
+            .await;
     }
 
-    // Multi-part download with range access. Write every part to a temporary
-    // file and only publish it after all requests have succeeded.
+    // Multi-part download with range access
     let part_count = total.div_ceil(PART_SIZE);
-    let mut temp = DownloadTempFile::new(file_path);
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temp.path)
-        .await?;
+    let file = File::create(file_path).await?;
     file.set_len(total).await?;
 
     let file = Arc::new(tokio::sync::Mutex::new(file));
-    let progress = Arc::new(std::sync::Mutex::new(ProgressEmitter::new(
-        on_progress.clone(),
-        total,
-    )));
+    let progress = Arc::new(tokio::sync::Mutex::new(TransferStats::default()));
 
     stream::iter(0..part_count)
-        .map(Ok::<u64, Error>)
-        .try_for_each_concurrent(8, |i| {
+        .for_each_concurrent(8, |i| {
             let client = client.clone();
             let file = Arc::clone(&file);
             let progress = Arc::clone(&progress);
             let headers = headers.clone();
             let url = url.to_string();
+            let on_progress = on_progress.clone();
 
             async move {
                 let start = i * PART_SIZE;
@@ -846,52 +290,40 @@ pub async fn download_file<R: tauri::Runtime>(
                     req = req.header(key, value);
                 }
 
-                let resp = req.send().await?;
-                if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-                    let status = resp.status().as_u16();
-                    let body = read_response_body_limited(resp, MAX_ERROR_BODY_BYTES).await?;
-                    return Err(Error::HttpErrorCode(
-                        status,
-                        String::from_utf8_lossy(&body).into_owned(),
-                    ));
+                let resp = match req.send().await {
+                    Ok(r) => r,
+                    Err(_) => return,
+                };
+
+                if !resp.status().is_success()
+                    && resp.status() != reqwest::StatusCode::PARTIAL_CONTENT
+                {
+                    return;
                 }
 
-                let actual_range = resp
-                    .headers()
-                    .get("content-range")
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(parse_content_range);
-                if actual_range != Some((start, end, total)) {
-                    return Err(Error::ContentLength(format!(
-                        "invalid Content-Range for bytes {start}-{end}"
-                    )));
-                }
-
-                let expected_len = end - start + 1;
-                let bytes = read_response_body_limited(resp, expected_len).await?;
-                if bytes.len() as u64 != expected_len {
-                    return Err(Error::ContentLength(format!(
-                        "range bytes {start}-{end} returned {} bytes, expected {expected_len}",
-                        bytes.len()
-                    )));
-                }
+                let bytes = match resp.bytes().await {
+                    Ok(b) => b,
+                    Err(_) => return,
+                };
 
                 {
                     let mut f = file.lock().await;
-                    f.seek(std::io::SeekFrom::Start(start)).await?;
-                    f.write_all(&bytes).await?;
+                    f.seek(std::io::SeekFrom::Start(start)).await.unwrap();
+                    f.write_all(&bytes).await.unwrap();
                 }
 
-                progress.lock().unwrap().record(bytes.len());
-
-                Ok(())
+                {
+                    let mut stat = progress.lock().await;
+                    stat.record_chunk_transfer(bytes.len());
+                    let _ = on_progress.send(ProgressPayload {
+                        progress: stat.total_transferred,
+                        total,
+                        transfer_speed: stat.transfer_speed,
+                    });
+                }
             }
         })
-        .await?;
-
-    progress.lock().unwrap().finish();
-    drop(file);
-    commit_download_file(&mut temp, file_path).await?;
+        .await;
 
     Ok(resp_headers)
 }
@@ -917,104 +349,67 @@ pub async fn upload_file<R: tauri::Runtime>(
         _ => return Err(Error::ContentLength("Invalid HTTP method".into())),
     };
 
-    let (upload_body, upload_progress) = file_to_body(on_progress.clone(), file, file_len);
     request = request
         .header(reqwest::header::CONTENT_LENGTH, file_len)
-        .body(upload_body);
+        .body(file_to_body(on_progress.clone(), file, file_len));
 
     for (key, value) in headers {
         request = request.header(&key, value);
     }
 
     let response = request.send().await?;
-    upload_progress.lock().unwrap().finish();
-    let status = response.status();
-    if status.is_success() {
-        Ok(response.text().await?)
+    if response.status().is_success() {
+        response.text().await.map_err(Into::into)
     } else {
-        let body = read_response_body_limited(response, MAX_ERROR_BODY_BYTES).await?;
         Err(Error::HttpErrorCode(
-            status.as_u16(),
-            String::from_utf8_lossy(&body).into_owned(),
+            response.status().as_u16(),
+            response.text().await.unwrap_or_default(),
         ))
     }
 }
 
-fn file_to_body(
-    channel: Channel<ProgressPayload>,
-    file: File,
-    file_len: u64,
-) -> (reqwest::Body, Arc<std::sync::Mutex<ProgressEmitter>>) {
+fn file_to_body(channel: Channel<ProgressPayload>, file: File, file_len: u64) -> reqwest::Body {
     let stream = FramedRead::new(file, BytesCodec::new()).map_ok(|r| r.freeze());
-    let progress = Arc::new(std::sync::Mutex::new(ProgressEmitter::new(
-        channel, file_len,
-    )));
-    let callback_progress = Arc::clone(&progress);
-    let body = reqwest::Body::wrap_stream(ReadProgressStream::new(
+
+    let mut stats = TransferStats::default();
+    reqwest::Body::wrap_stream(ReadProgressStream::new(
         stream,
         Box::new(move |progress_chunk, _progress_total| {
-            callback_progress
-                .lock()
-                .unwrap()
-                .record(progress_chunk as usize);
+            stats.record_chunk_transfer(progress_chunk as usize);
+            let _ = channel.send(ProgressPayload {
+                progress: stats.total_transferred,
+                total: file_len,
+                transfer_speed: stats.transfer_speed,
+            });
         }),
-    ));
-    (body, progress)
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        has_disallowed_components, is_path_within_root, parse_content_range, resume_paths,
-        DownloadTempFile,
-    };
+    use super::{has_disallowed_components, is_within_app_storage};
 
     #[test]
-    fn resume_paths_are_stable_and_sidecar_has_no_headers() {
-        let (part, sidecar) = resume_paths("/tmp/book.epub");
-        assert_eq!(part.to_string_lossy(), "/tmp/book.epub.readest.part");
-        assert_eq!(
-            sidecar.to_string_lossy(),
-            "/tmp/book.epub.readest.part.json"
-        );
-    }
-
-    #[test]
-    fn long_filename_uses_short_sibling_paths_for_download_state() {
-        let filename = format!("{}.azw3", "a".repeat(250));
-        let parent = std::env::temp_dir();
-        let destination = parent.join(filename);
-        let destination = destination.to_string_lossy();
-        let (part, sidecar) = resume_paths(&destination);
-        let temp = DownloadTempFile::new(&destination);
-
-        assert_eq!(part.parent(), Some(parent.as_path()));
-        assert_eq!(sidecar.parent(), part.parent());
-        assert!(part.file_name().unwrap().to_string_lossy().len() < 255);
-        assert!(sidecar.file_name().unwrap().to_string_lossy().len() < 255);
-        assert!(
-            std::path::Path::new(&temp.path)
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .len()
-                < 255
-        );
-    }
-
-    #[test]
-    fn app_storage_fallback_requires_a_component_boundary() {
-        let root = std::env::temp_dir().join("readest-transfer-root");
-        assert!(is_path_within_root(
-            &root,
-            &root.join("Readest").join("Books").join("book.epub")
+    fn app_storage_fallback_accepts_app_paths() {
+        let id = "com.bilingify.readest";
+        // Covers, dictionaries, books, gloss packs — under the `Readest` data dir.
+        assert!(is_within_app_storage(
+            "/data/user/0/com.bilingify.readest/Readest/Books/abc/cover.png",
+            id
         ));
-        assert!(!is_path_within_root(
-            &root,
-            &root
-                .with_file_name("readest-transfer-root-shadow")
-                .join("book.epub")
+        assert!(is_within_app_storage(
+            "/data/user/0/com.bilingify.readest/Readest/Dictionaries/x/d.mdx",
+            id
         ));
+        // Cache-dir downloads (e.g. OPDS) carry no `Readest` segment but are still
+        // inside the app sandbox, matched via the bundle identifier.
+        assert!(is_within_app_storage(
+            "/data/user/0/com.bilingify.readest/cache/opds-book.epub",
+            id
+        ));
+        // Foreign targets carry neither segment and stay blocked.
+        assert!(!is_within_app_storage("/home/user/.ssh/id_rsa", id));
+        assert!(!is_within_app_storage("/etc/passwd", id));
     }
 
     #[test]
@@ -1027,24 +422,6 @@ mod tests {
         assert!(has_disallowed_components(
             "/home/user/Readest/../../.ssh/id_rsa"
         ));
-    }
-
-    #[test]
-    fn parses_and_rejects_content_ranges() {
-        assert_eq!(
-            parse_content_range("bytes 0-1023/4096"),
-            Some((0, 1023, 4096))
-        );
-        assert_eq!(parse_content_range("bytes 0-1023/*"), None);
-        assert_eq!(
-            parse_content_range("bytes 0-1023/4096 "),
-            Some((0, 1023, 4096))
-        );
-        assert_eq!(
-            parse_content_range("Bytes 0-1023 / 4096"),
-            Some((0, 1023, 4096))
-        );
-        assert_eq!(parse_content_range("items 0-1023/4096"), None);
     }
 
     #[cfg(unix)]

@@ -22,10 +22,10 @@ describe('isNearbyPairingInPlan', () => {
 describe('isNearbyPairingAllowed (premium paywall)', () => {
   test('pairing for confirmation-free drops requires a paid plan', () => {
     expect(NEARBY_PAIRING_REQUIRES_PREMIUM).toBe(true);
-    expect(isNearbyPairingAllowed('free', false)).toBe(true);
+    expect(isNearbyPairingAllowed('free', false)).toBe(false);
     expect(isNearbyPairingAllowed('plus', false)).toBe(true);
     expect(isNearbyPairingAllowed('pro', false)).toBe(true);
-    expect(isNearbyPairingAllowed('purchase', false)).toBe(true);
+    expect(isNearbyPairingAllowed('purchase', false)).toBe(false);
   });
 
   test('the Full Customization unlock entitles a free user', () => {

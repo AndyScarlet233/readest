@@ -21,7 +21,6 @@ import {
 import {
   decideRemoteConflict,
   getRemoteFraction,
-  isReportedByKOReader,
   isXPointerProgress,
   resolveRemoteLocalFraction,
   type RemoteFractionResolution,
@@ -166,50 +165,56 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
     return { koProgress, percentage };
   }, [bookKey, getProgress, getBookData, getView, getConfig, setConfig]);
 
-  const applyRemoteProgress = async (book: Book, bookDoc: BookDoc, remote: KoSyncProgress) => {
+  /**
+   * Applies the remote position to the view. Returns false when it could NOT
+   * be applied, which the callers MUST honour: marking the pull 'synced' after
+   * a failure releases the debounced auto-push, and that push overwrites the
+   * newer remote position with the stale local one (#5065).
+   */
+  const applyRemoteProgress = async (
+    book: Book,
+    bookDoc: BookDoc,
+    remote: KoSyncProgress,
+  ): Promise<boolean> => {
     const view = getView(bookKey);
     const bookData = getBookData(bookKey);
-    if (!view || !bookData) return;
+    if (!view || !bookData) return false;
 
     if (FIXED_LAYOUT_FORMATS.has(book.format)) {
       const pageToGo = parseInt(remote.progress!, 10);
-      if (isNaN(pageToGo)) return;
+      if (isNaN(pageToGo)) return false;
       view.select(pageToGo - 1);
     } else {
-      let navigated = false;
-      // KOReader stores positions as CREngine XPointers; convert and jump
-      // precisely when we have one.
+      // KOReader stores positions as CREngine XPointers, which name an exact
+      // node. When one is present it is the ONLY acceptable answer: if it
+      // won't convert, say so and stay put rather than approximating from the
+      // reported percentage. That percentage is CREngine's own pagination and
+      // lands in the wrong chapter often enough to be worse than not syncing
+      // (#5980). The pull stays in the unresolved/conflict state, so the
+      // auto-push still cannot overwrite the remote position with this one.
       if (isXPointerProgress(remote.progress)) {
         try {
           const content = view.renderer
             .getContents()
             .find((x) => x.index === view.renderer.primaryIndex);
-          // Only feed percentage into the CREngine↔foliate drift anchor when
-          // the report actually comes from KOReader (#5109) — a look-alike
-          // server's percentage isn't comparable to foliate's section table
-          // and re-anchors to the wrong chapter otherwise.
-          const driftAnchorPercentage = isReportedByKOReader(remote)
-            ? remote.percentage
-            : undefined;
           const cfi = await getCFIFromXPointer(
             remote.progress!,
             content?.doc,
             content?.index,
             bookDoc,
-            driftAnchorPercentage,
           );
           view.goTo(cfi);
-          navigated = true;
         } catch (error) {
           console.error('Failed to convert XPointer to CFI', error);
+          eventDispatcher.dispatch('hint', { bookKey, message: _('Sync failed') });
+          return false;
         }
-      }
-      // Other KOSync-compatible servers (e.g. Kavita) report progress in
-      // formats Readest can't resolve positionally — approximate with the
-      // reported percentage so "use remote" still moves the reader.
-      if (!navigated) {
+      } else {
+        // Other KOSync-compatible servers (e.g. Kavita) report progress in
+        // formats Readest can't resolve positionally. There the percentage is
+        // the only signal there is, so it remains the target.
         const remoteFraction = getRemoteFraction(remote);
-        if (remoteFraction === undefined) return;
+        if (remoteFraction === undefined) return false;
         view.goToFraction(remoteFraction);
       }
     }
@@ -217,6 +222,7 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
       bookKey,
       message: _('Reading Progress Synced'),
     });
+    return true;
   };
 
   const promptedSync = async (
@@ -374,8 +380,8 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
         : Date.now();
       const remoteIsNewer = remoteTimestamp > localTimestamp;
       if (strategy === 'receive' || (strategy === 'silent' && remoteIsNewer)) {
-        applyRemoteProgress(book, bookDoc, remoteProgress);
-        setSyncState('synced');
+        const applied = await applyRemoteProgress(book, bookDoc, remoteProgress);
+        setSyncState(applied ? 'synced' : 'error');
       } else if (strategy === 'prompt') {
         const resolved = resolvedRemoteRef.current;
         const isAlreadyResolved =
@@ -508,8 +514,8 @@ export const useKOSync = (bookKey: string, provider: KosyncProgressProvider = ko
     if (!remote.progress && getRemoteFraction(remote) === undefined) return;
 
     resolvedRemoteRef.current = remote;
-    applyRemoteProgress(book, bookDoc, remote);
-    setSyncState('synced');
+    const applied = await applyRemoteProgress(book, bookDoc, remote);
+    setSyncState(applied ? 'synced' : 'error');
     setConflictDetails(null);
   };
 

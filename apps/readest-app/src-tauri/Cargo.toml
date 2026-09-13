@@ -39,15 +39,13 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 semver = "1"
 base64 = "0.22"
+psl = "2" # Validate response cookie domains before updating the browser session.
 minisign-verify = "0.2"
 log = "0.4"
 thiserror = "2"
 walkdir = "2"
-tokio = { version = "1", features = ["fs", "io-util", "net", "sync", "time"] }
-tokio-util = { version = "0.7", features = ["codec", "io", "rt"] }
-# LAN sync peer server (src/lan_sync/). Already in the dependency tree via
-# localsend, so this resolves to the same 0.8.x build — near-zero added cost.
-axum = "0.8"
+tokio = { version = "1", features = ["fs"] }
+tokio-util = { version = "0.7", features = ["codec", "rt"] }
 futures-util = "0.3"
 futures = "0.3.31"
 read-progress-stream = "1.0.0"
@@ -83,7 +81,6 @@ tauri-plugin-shell = "2"
 tauri-plugin-process = "2"
 tauri-plugin-oauth = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-barcode-scanner = { path = "../../../packages/tauri-plugins/plugins/barcode-scanner" }
 tauri-plugin-deep-link = "2"
 tauri-plugin-sign-in-with-apple = "1.0.2"
 tauri-plugin-haptics = "2"
@@ -115,8 +112,6 @@ anyhow = "1"
 bytes = "1"
 tokio-stream = "0.1"
 if-addrs = "0.15"
-# Readest-specific mDNS service for one-click LAN peer discovery.
-mdns-sd = "0.13"
 
 # Native EPUB import path (Q1): zip + quick-xml + md5.
 # Used by `epub_parser::parse_epub_metadata` (partialMD5 + downscaled
@@ -214,7 +209,6 @@ discord-rich-presence = "1.0.0"
 # Resolve the user's default browser from the registry for the cold-browser
 # OAuth-redirect fallback (see src/spawn_fresh_browser.rs).
 winreg = "0.52"
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"

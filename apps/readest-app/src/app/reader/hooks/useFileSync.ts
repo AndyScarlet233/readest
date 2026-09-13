@@ -219,9 +219,6 @@ export const useFileSync = (bookKey: string) => {
           case 'icloud':
             next = { ...next, icloud: { ...next.icloud, lastSyncedAt: ts } };
             break;
-          case 'lan':
-            next = { ...next, lan: { ...next.lan, lastSyncedAt: ts } };
-            break;
         }
       }
       setSettings(next);
@@ -243,16 +240,8 @@ export const useFileSync = (bookKey: string) => {
       `gdrive:${settings.googleDrive?.enabled}`,
       `s3:${c?.endpoint}:${c?.region}:${c?.bucket}:${c?.accessKeyId}:${c?.secretAccessKey}`,
       `onedrive:${settings.onedrive?.enabled}`,
-      `lan:${settings.lan?.host}:${settings.lan?.port}:${settings.lan?.token}`,
     ].join('|');
-  }, [
-    activeKindsKey,
-    settings.webdav,
-    settings.googleDrive,
-    settings.s3,
-    settings.onedrive,
-    settings.lan,
-  ]);
+  }, [activeKindsKey, settings.webdav, settings.googleDrive, settings.s3, settings.onedrive]);
 
   const [engines, setEngines] = useState<
     Array<{ kind: FileSyncBackendKind; engine: FileSyncEngine }>
@@ -410,9 +399,7 @@ export const useFileSync = (bookKey: string) => {
       if (coverSyncedRef.current.has(kind)) continue;
       coverSyncedRef.current.add(kind);
       try {
-        // The explicit reader path may follow an equal-sized cover edit; do not
-        // let a size-only HEAD check retain stale remote bytes.
-        await engine.pushBookCover(book, true);
+        await engine.pushBookCover(book);
       } catch (e) {
         coverSyncedRef.current.delete(kind);
         handleSyncError(kind, 'file sync cover push failed', e);

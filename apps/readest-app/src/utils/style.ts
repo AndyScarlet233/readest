@@ -447,6 +447,15 @@ const getPageLayoutStyles = (
     display: table !important;
     max-width: 100%;
   }
+  /* A scroll container is monolithic in CSS fragmentation, so a scrolling
+     wrapper can't break across columns: taller than the page, it overflows the
+     column and every row past the first page is clipped and unreachable
+     (#6129). Clamp the wrapper — not the table, whose max-height Chromium and
+     WebKit treat as a minimum — to one page so it scrolls vertically in place.
+     A fit wrapper is overflow:visible and its rows paginate normally. */
+  body.paginated-mode .${SCROLL_WRAPPER_CLASS}:not(.${SCROLL_WRAPPER_FIT_CLASS}) {
+    max-height: calc(var(--available-height) * 1px);
+  }
   pre, code {
     white-space: pre-wrap !important;
     scrollbar-width: none;
@@ -454,10 +463,10 @@ const getPageLayoutStyles = (
   math {
     overflow: auto;
     scrollbar-width: none;
+    max-height: calc(var(--available-height) * 1px);
   }
   table, math {
     max-width: calc(var(--available-width) * 1px);
-    max-height: calc(var(--available-height) * 1px);
   }
 
   .epubtype-footnote,
@@ -1469,6 +1478,7 @@ export const applyImageStyle = (document: Document) => {
       heightAttr && (heightAttr.endsWith('%') || heightAttr.endsWith('vh'))
         ? parseFloat(heightAttr)
         : NaN;
+    const noEnlarge = img.getAttribute('zy-enlarge-src') === 'none';
 
     let inlineWithText = false;
     let keepBaseline = false;
@@ -1491,10 +1501,24 @@ export const applyImageStyle = (document: Document) => {
         keepBaseline = valign === '' || valign === 'baseline';
       }
     }
-    return { img, percentWidth, percentHeight, inlineWithText, keepBaseline };
+    return {
+      img,
+      percentWidth,
+      percentHeight,
+      inlineWithText,
+      keepBaseline,
+      noEnlarge,
+    };
   });
 
-  for (const { img, percentWidth, percentHeight, inlineWithText, keepBaseline } of plans) {
+  for (const {
+    img,
+    percentWidth,
+    percentHeight,
+    inlineWithText,
+    keepBaseline,
+    noEnlarge,
+  } of plans) {
     if (!isNaN(percentWidth)) {
       img.style.width = `${(percentWidth / 100) * window.innerWidth}px`;
       img.removeAttribute('width');
@@ -1506,6 +1530,9 @@ export const applyImageStyle = (document: Document) => {
     if (inlineWithText) {
       img.classList.add('has-text-siblings');
       if (keepBaseline) img.classList.add('has-text-siblings-baseline');
+    }
+    if (noEnlarge) {
+      img.style.setProperty('pointer-events', 'none');
     }
   }
   document.querySelectorAll('hr').forEach((hr) => {

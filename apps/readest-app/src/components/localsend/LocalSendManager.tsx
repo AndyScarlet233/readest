@@ -43,7 +43,7 @@ import {
   type LocalSendDevice,
 } from '@/services/localsend/types';
 import { eventDispatcher } from '@/utils/event';
-import { setPersistentMulticastLock } from '@/utils/bridge';
+import { setMulticastLock } from '@/utils/bridge';
 import { resolveBookSendFile } from '@/services/localsend/bookFile';
 import type { Book } from '@/types/book';
 import DevicePickerDialog from './DevicePickerDialog';
@@ -54,8 +54,6 @@ interface ServerStatePayload {
   port: number;
   error: string | null;
 }
-
-let localSendServiceStateQueue: Promise<void> = Promise.resolve();
 
 /**
  * Background controller for the LocalSend integration. Mounted in the library
@@ -137,59 +135,29 @@ const LocalSendManager: React.FC = () => {
 
   // Service lifecycle: match the running state to the per-device preference.
   // The service intentionally survives unmounts (route changes); only the
-  // preference toggle stops it. Queue the whole transition so a stale
-  // enable/disable event cannot reorder the shared Android lock owner.
-  const syncServiceState = useCallback(
-    async (restart = false) => {
-      const previous = localSendServiceStateQueue;
-      const operation = previous.then(async () => {
-        if (!isTauriAppPlatform() || !appService) return;
-        let multicastLockAcquired = false;
-        try {
-          const enabled = isLocalSendEnabled();
-          if (restart && enabled) {
-            try {
-              await stopLocalSend();
-            } catch {
-              /* it may not have been running */
-            }
-          }
-
-          if (enabled) {
-            await setPersistentMulticastLock(appService.isAndroidApp, 'localsend');
-            multicastLockAcquired = appService.isAndroidApp;
-            const alias = getLocalSendAlias() || (await defaultAlias());
-            // Tauri reports iPad and iPhone both as `ios`; split on the shorter
-            // screen edge (iPads are >= 600pt, all iPhones are narrower).
-            const isTablet =
-              typeof screen !== 'undefined' && Math.min(screen.width, screen.height) >= 600;
-            const deviceModel = localSendDeviceModel(appService.osPlatform, isTablet);
-            const status = await startLocalSend(alias, deviceModel);
-            useLocalSendStore.getState().setStatus(status);
-          } else {
-            try {
-              await stopLocalSend();
-            } catch {
-              /* it may not have been running */
-            }
-            await setPersistentMulticastLock(false, 'localsend');
-            useLocalSendStore.getState().setStatus(null);
-          }
-        } catch (err) {
-          if (multicastLockAcquired) {
-            await setPersistentMulticastLock(false, 'localsend').catch(() => {});
-          }
-          console.error('LocalSend service state change failed:', err);
-        }
-      });
-      localSendServiceStateQueue = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
-    },
-    [appService, defaultAlias],
-  );
+  // preference toggle stops it.
+  const syncServiceState = useCallback(async () => {
+    if (!isTauriAppPlatform() || !appService) return;
+    try {
+      if (isLocalSendEnabled()) {
+        if (appService.isAndroidApp) await setMulticastLock(true).catch(() => {});
+        const alias = getLocalSendAlias() || (await defaultAlias());
+        // Tauri reports iPad and iPhone both as `ios`; split on the shorter
+        // screen edge (iPads are >= 600pt, all iPhones are narrower).
+        const isTablet =
+          typeof screen !== 'undefined' && Math.min(screen.width, screen.height) >= 600;
+        const deviceModel = localSendDeviceModel(appService.osPlatform, isTablet);
+        const status = await startLocalSend(alias, deviceModel);
+        useLocalSendStore.getState().setStatus(status);
+      } else {
+        await stopLocalSend();
+        if (appService.isAndroidApp) await setMulticastLock(false).catch(() => {});
+        useLocalSendStore.getState().setStatus(null);
+      }
+    } catch (err) {
+      console.error('LocalSend service state change failed:', err);
+    }
+  }, [appService, defaultAlias]);
 
   useEffect(() => {
     void syncServiceState();
@@ -206,10 +174,7 @@ const LocalSendManager: React.FC = () => {
   // This is presence only - the service keeps running, nothing disconnects.
   useEffect(() => {
     if (!isTauriAppPlatform()) return;
-    let generation = 0;
-    let disposed = false;
     const sync = async () => {
-      const currentGeneration = ++generation;
       if (!isLocalSendEnabled()) return;
       const visible = document.visibilityState === 'visible';
       if (!visible) {
@@ -223,11 +188,7 @@ const LocalSendManager: React.FC = () => {
       // showed nothing until the user toggled the setting off and on). Trust a
       // liveness probe, not the stored flag, and rebuild the service when it
       // fails: `stop` first, or `start` would hand back the dead one.
-      const alive = await isLocalSendAlive().catch(() => false);
-      if (disposed || currentGeneration !== generation || document.visibilityState !== 'visible') {
-        return;
-      }
-      if (!alive) {
+      if (!(await isLocalSendAlive().catch(() => false))) {
         await stopLocalSend().catch(() => {});
         void syncServiceState();
         return;
@@ -236,19 +197,20 @@ const LocalSendManager: React.FC = () => {
     };
     const onVisibilityChange = () => void sync();
     document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      disposed = true;
-      generation += 1;
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, [syncServiceState]);
 
   // The alias change flow restarts the service (stop, then start with the new
   // alias). The settings form dispatches 'localsend-alias-changed' for this.
   useEffect(() => {
-    const onAliasChanged = () => {
+    const onAliasChanged = async () => {
       if (!isTauriAppPlatform() || !isLocalSendEnabled()) return;
-      void syncServiceState(true);
+      try {
+        await stopLocalSend();
+      } catch {
+        /* it may not have been running */
+      }
+      void syncServiceState();
     };
     eventDispatcher.on('localsend-alias-changed', onAliasChanged);
     return () => eventDispatcher.off('localsend-alias-changed', onAliasChanged);

@@ -151,7 +151,6 @@ vi.mock('@/utils/style', () => ({
 }));
 
 vi.mock('@/services/constants', () => ({
-  FONT_SIZE_LIMITS: { MIN: 8, MAX: 50, DEFAULT: 16 },
   MAX_ZOOM_LEVEL: 200,
   MIN_ZOOM_LEVEL: 50,
   ZOOM_STEP: 10,

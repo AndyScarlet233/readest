@@ -51,6 +51,7 @@ fn main() {
             "clear_book_presence",
             "clip_url",
             "open_web_browser",
+            "fetch_web_browser_resource",
             "set_web_browser_status",
             "spawn_fresh_browser",
             "verify_update_signature",
@@ -66,10 +67,6 @@ fn main() {
             "localsend_cancel_receive",
             "localsend_send_files",
             "localsend_cancel_send",
-            "lan_sync_start",
-            "lan_sync_discover",
-            "lan_sync_stop",
-            "lan_sync_status",
         ]),
     ))
     .expect("failed to run tauri-build");

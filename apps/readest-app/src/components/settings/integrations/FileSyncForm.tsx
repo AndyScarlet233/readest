@@ -9,7 +9,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useFileSyncStore } from '@/store/fileSyncStore';
 import { eventDispatcher } from '@/utils/event';
-import { FileSyncEngine, type SyncFailureEntry } from '@/services/sync/file/engine';
+import { FileSyncEngine } from '@/services/sync/file/engine';
 import { FileSyncError } from '@/services/sync/file/provider';
 import { createAppLocalStore } from '@/services/sync/file/appLocalStore';
 import {
@@ -47,8 +47,7 @@ interface FileSyncFormProps {
 /**
  * Translate a sync-time error into a user-facing string. Backend-neutral: the
  * provider maps every failure to a {@link FileSyncError} with a normalised `code`
- * so we never show a raw English `e.message` as the headline. The diagnostic
- * detail below deliberately preserves the provider's original reason.
+ * so we never show a raw English `e.message`.
  */
 const formatSyncError = (_: TranslationFunc, e: unknown): string => {
   if (e instanceof FileSyncError) {
@@ -65,19 +64,6 @@ const formatSyncError = (_: TranslationFunc, e: unknown): string => {
     }
   }
   return _('Sync failed.');
-};
-
-const formatFailurePhase = (_: TranslationFunc, phase: SyncFailureEntry['phase']): string => {
-  switch (phase) {
-    case 'download':
-      return _('Download');
-    case 'upload-config':
-      return _('Upload config');
-    case 'upload-file':
-      return _('Upload book file');
-    case 'upload-cover':
-      return _('Upload cover');
-  }
 };
 
 /**
@@ -97,12 +83,10 @@ const FileSyncForm: React.FC<FileSyncFormProps> = ({
   const _ = useTranslation();
   const { settings } = useSettingsStore();
   const { envConfig } = useEnv();
-  const [lastFailureDetail, setLastFailureDetail] = React.useState<string | null>(null);
 
   const isSyncing = useFileSyncStore((s) => s.byKind[kind]?.isSyncing ?? false);
   const syncProgressLabel = useFileSyncStore((s) => s.byKind[kind]?.progressLabel ?? null);
   const syncProgressDetail = useFileSyncStore((s) => s.byKind[kind]?.progressDetail ?? null);
-  const syncProgressPercent = useFileSyncStore((s) => s.byKind[kind]?.progressPercent ?? null);
   const beginSync = useFileSyncStore((s) => s.beginSync);
   const updateProgress = useFileSyncStore((s) => s.updateProgress);
   const endSync = useFileSyncStore((s) => s.endSync);
@@ -156,7 +140,6 @@ const FileSyncForm: React.FC<FileSyncFormProps> = ({
       return;
     }
 
-    setLastFailureDetail(null);
     try {
       const provider = await createFileSyncProvider(kind, settings);
       if (!provider) {
@@ -170,68 +153,37 @@ const FileSyncForm: React.FC<FileSyncFormProps> = ({
         fullSync: stored.fullSync ?? false,
         deviceId: deviceId as string,
         onProgress: ({ book, index, total, action }) => {
-          const actionStr =
-            action === 'downloading'
-              ? _('Downloading')
-              : action === 'uploading-files'
-                ? _('Uploading files')
-                : _('Uploading');
+          const actionStr = action === 'downloading' ? _('Downloading') : _('Uploading');
           updateProgress(
             kind,
             _('{{action}} {{n}} / {{total}}', { action: actionStr, n: index + 1, total }),
             book.title || book.hash.slice(0, 8),
-            total > 0 ? Math.round(((index + 1) / total) * 100) : null,
           );
         },
       });
 
       await persist({ lastSyncedAt: Date.now() });
-      // `result.failures` counts failed PIPELINE PHASES. One book can therefore
-      // contribute two or more failures (config + binary, for example). Count
-      // distinct hashes for the user-facing book total and keep every phase in
-      // the diagnostic detail so the underlying cause is not hidden.
-      const failedHashes = new Set(result.failedBooks.map((failure) => failure.hash));
-      const failedBookCount = failedHashes.size;
-      const okBookCount = Math.max(0, result.totalBooks - failedBookCount);
-      const failureLines = result.failedBooks.map(
-        (failure) =>
-          `${failure.title || failure.hash.slice(0, 8)} · ${formatFailurePhase(_, failure.phase)} · ${failure.reason}`,
-      );
-      if (result.indexPushFailed) {
-        failureLines.push(
-          _('Library index upload failed; other devices may not see these changes.'),
-        );
-      }
-      const detail = failureLines.join('\n');
-      setLastFailureDetail(detail || null);
-
-      // A fully successful run heals the provider's health surfaces. A partial
-      // run should remain visibly unhealthy: otherwise the settings row says
-      // success while the diagnostic list immediately below says books failed.
-      if (failedBookCount > 0 || result.indexPushFailed) {
-        setLastError(kind, detail || _('Sync finished with errors'));
+      // A completed run heals the provider's health surfaces (the Cloud Sync
+      // chooser row, the SettingsMenu sync row) — otherwise a pre-restart
+      // failure keeps reading "Sync failed" after a successful manual sync.
+      setLastError(kind, null);
+      if (result.failures > 0) {
         eventDispatcher.dispatch('toast', {
           type: 'warning',
-          message: _('Sync finished: {{ok}} ok, {{failed}} book(s) failed.', {
-            failed: failedBookCount,
-            ok: okBookCount,
+          message: _('Sync finished with {{failed}} failure(s). {{ok}} ok.', {
+            failed: result.failures,
+            ok: Math.max(0, result.totalBooks - result.failures),
           }),
         });
       } else {
-        setLastError(kind, null);
         eventDispatcher.dispatch('toast', {
           type: 'info',
           message: _('{{count}} book(s) synced', { count: result.booksSynced }),
         });
       }
     } catch (e) {
-      const raw = e instanceof Error ? e.message : String(e);
-      setLastError(kind, raw);
-      setLastFailureDetail(raw);
-      eventDispatcher.dispatch('toast', {
-        type: 'error',
-        message: `${formatSyncError(_, e)} ${raw}`.trim(),
-      });
+      setLastError(kind, e instanceof Error ? e.message : String(e));
+      eventDispatcher.dispatch('toast', { type: 'error', message: formatSyncError(_, e) });
     } finally {
       endSync(kind);
     }
@@ -265,34 +217,15 @@ const FileSyncForm: React.FC<FileSyncFormProps> = ({
       </SettingsRow>
       <SettingsRow
         label={
-          <span className='flex w-full flex-col gap-1.5'>
-            <span>
-              {syncProgressLabel
-                ? syncProgressLabel
-                : stored.lastSyncedAt
-                  ? _('Synced {{time}}', { time: dayjs(stored.lastSyncedAt).fromNow() })
-                  : _('Never synced')}
-            </span>
-            {isSyncing && syncProgressPercent != null && (
-              <span
-                aria-hidden
-                className='bg-base-300 block h-1.5 w-full overflow-hidden rounded-full'
-              >
-                <span
-                  className='bg-primary block h-full rounded-full transition-[width] duration-300'
-                  style={{ width: `${Math.max(2, Math.min(100, syncProgressPercent))}%` }}
-                />
-              </span>
-            )}
-          </span>
+          syncProgressLabel
+            ? syncProgressLabel
+            : stored.lastSyncedAt
+              ? _('Synced {{time}}', { time: dayjs(stored.lastSyncedAt).fromNow() })
+              : _('Never synced')
         }
         description={
           syncProgressDetail ? (
             <span className='line-clamp-1'>{syncProgressDetail}</span>
-          ) : lastFailureDetail ? (
-            <span className='text-error whitespace-pre-wrap break-words text-xs leading-relaxed'>
-              {lastFailureDetail}
-            </span>
           ) : undefined
         }
       >

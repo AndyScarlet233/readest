@@ -35,7 +35,6 @@ import {
   buildBookLookupIndex,
   collectKnownSourcePaths,
   selectNewImportableFiles,
-  shouldShowImportSuccessToast,
 } from '@/services/bookService';
 
 class TestAppService extends BaseAppService {
@@ -101,26 +100,6 @@ const TEST_METADATA = {
   language: 'en',
   identifier: 'isbn-dup',
 };
-
-describe('import success feedback', () => {
-  it('does not show a success toast for silent auto-import runs', () => {
-    expect(shouldShowImportSuccessToast({ silent: true, importedCount: 1, failedCount: 0 })).toBe(
-      false,
-    );
-  });
-
-  it('shows a success toast only for clean interactive imports', () => {
-    expect(shouldShowImportSuccessToast({ silent: false, importedCount: 1, failedCount: 0 })).toBe(
-      true,
-    );
-    expect(shouldShowImportSuccessToast({ silent: false, importedCount: 1, failedCount: 1 })).toBe(
-      false,
-    );
-    expect(shouldShowImportSuccessToast({ silent: false, importedCount: 0, failedCount: 0 })).toBe(
-      false,
-    );
-  });
-});
 
 /** One watched folder holding the same book under two different filenames. */
 const ORIGINAL_PATH = '/lib/watched/book.epub';

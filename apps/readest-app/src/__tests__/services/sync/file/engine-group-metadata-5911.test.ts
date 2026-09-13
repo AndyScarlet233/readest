@@ -414,46 +414,9 @@ describe('FileSyncEngine.syncLibrary — incremental stays O(changed)', () => {
     await new FileSyncEngine(
       provider,
       fakeStore({
-        updateBookMetadata: async (b) => {
-          applied.push(b);
-        },
-      }),
-    ).syncLibrary([makeBook('h1', { updatedAt: 100, coverDownloadedAt: 1 })], {
-      strategy: 'silent',
-      syncBooks: false,
-      deviceId: 'peer',
-      fullSync: true,
-    });
-
-    expect(applied[0]?.groupId).toBe('g1');
-    expect(applied[0]?.metadata?.description).toBe('A long blurb');
-    expect(reads.filter((p) => p.endsWith('cover.png'))).toEqual([]);
-  });
-
-  test('a cover-less row re-pulls the cover even when no clock moved', async () => {
-    // Rows materialised mid-transfer (metadata-only) have no local cover; the
-    // reconciliation pass must fetch it once the peer's metadata pass lands
-    // it, instead of leaving the tile on its placeholder forever. The index
-    // holds a field this device misses, so the Full-Sync repair path runs.
-    const reads: string[] = [];
-    const provider = fakeProvider({
-      readText: async (p) =>
-        p.endsWith('library.json')
-          ? JSON.stringify({
-              schemaVersion: 1,
-              updatedAt: 1,
-              books: [makeBook('h1', { updatedAt: 100, groupId: 'g1' })],
-            })
-          : null,
-      readBinary: async (p) => {
-        reads.push(p);
-        return new ArrayBuffer(8);
-      },
-    });
-    const applied: Book[] = [];
-    await new FileSyncEngine(
-      provider,
-      fakeStore({
+        // The cover is already on this device: only a row whose cover file is
+        // missing may cost a Full Sync cover GET (#5931), never a field repair.
+        loadBookCover: async () => ({ bytes: new ArrayBuffer(8), size: 8 }),
         updateBookMetadata: async (b) => {
           applied.push(b);
         },
@@ -466,7 +429,8 @@ describe('FileSyncEngine.syncLibrary — incremental stays O(changed)', () => {
     });
 
     expect(applied[0]?.groupId).toBe('g1');
-    expect(reads.filter((p) => p.endsWith('cover.png')).length).toBe(1);
+    expect(applied[0]?.metadata?.description).toBe('A long blurb');
+    expect(reads.filter((p) => p.endsWith('cover.png'))).toEqual([]);
   });
 
   test('a genuinely newer remote row still re-pulls the cover', async () => {

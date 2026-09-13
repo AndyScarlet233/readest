@@ -53,9 +53,9 @@ iOS home indicator). Upstream ba3490b3e "Use workspace dependency management
    CarPlay and showed the CPNowPlaying template with the current book, process
    alive, no crash report, no NSGenericException. So upstream 0.37.0 is FINE
    for CarPlay despite the TaoSceneDelegate override; the theoretical concern
-   above did NOT materialize. `packages/tao` submodule REMOVED in local dev
-   commit a362ac598 (2026-09-06, `git submodule deinit` + `git rm`, workflow
-   comment updated; NOT pushed). Not yet checked: iOS 26.3 sim, real device.
+   above did NOT materialize. `packages/tao` submodule REMOVED: PR #6085
+   (branch `chore/remove-tao-submodule` on origin, rebased onto 77e44eb92;
+   `git submodule deinit` + `git rm`, workflow comment updated). Not yet checked: iOS 26.3 sim, real device.
 
 Also: `rust-version` bumped 1.77.2 -> 1.90 in root `[workspace.package]` and
 `src-tauri/Cargo.toml` (user request). MSRV-aware fallback is NOT active with
@@ -110,9 +110,9 @@ Outcome: shipped as PR #6081 "chore: bump tauri to version 2.11.5" (head on the
 CI fixes: cargoHash + pnpmDeps hash bumps and the `as_chunks` clippy rewrite in
 epub_parser.rs. Main then took #6083 (nix Linux package on CEF). The temporary
 fork tag `cef-stub-old-base` was DELETED once main pinned 3156d92b7; the
-leftover `packages/tauri-plugins/` dir is gone. STILL OPEN: `packages/tao`
-submodule is registered in .gitmodules but unused (remove in a follow-up PR);
-iOS build with the relabelled swift-rs + upstream tao 0.37 not yet verified.
+leftover `packages/tauri-plugins/` dir is gone. `packages/tao` was removed by
+PR #6085. The iOS 18.5 simulator build and CarPlay check passed as recorded above;
+iOS 26.3 simulator and real-device verification remain open.
 
 Sim recipe that worked (2026-09-06): boot `xcrun simctl boot <udid>` + `open -a
 Simulator` FIRST, `pnpm dev-ios-sim` (Next export + cargo sim build + xcodebuild

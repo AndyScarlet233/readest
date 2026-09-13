@@ -57,7 +57,6 @@ import {
   handleMousedown,
   handleMouseup,
   handleMousemove,
-  handleDragstart,
   handleAuxclick,
   handleClick,
   handleClickCapture,
@@ -464,7 +463,6 @@ const FoliateViewer: React.FC<{
         detail.doc.addEventListener('mousedown', handleMousedown.bind(null, bookKey));
         detail.doc.addEventListener('mouseup', handleMouseup.bind(null, bookKey));
         detail.doc.addEventListener('mousemove', handleMousemove.bind(null, bookKey));
-        detail.doc.addEventListener('dragstart', handleDragstart.bind(null, bookKey));
         detail.doc.addEventListener('auxclick', handleAuxclick.bind(null, bookKey));
         detail.doc.addEventListener('click', handleClickCapture.bind(null, bookKey), {
           capture: true,
@@ -602,8 +600,8 @@ const FoliateViewer: React.FC<{
     }
   };
 
-  const { handlePageFlip, handleMousePan } = usePagination(bookKey, viewRef, containerRef);
-  const mouseHandlers = useMouseEvent(bookKey, handlePageFlip, handleMousePan);
+  const { handlePageFlip } = usePagination(bookKey, viewRef, containerRef);
+  const mouseHandlers = useMouseEvent(bookKey, handlePageFlip);
   const touchHandlers = useTouchEvent(bookKey);
   const autoscrollAnchor = useMiddleClickAutoscroll(bookKey, viewRef, containerRef);
 
@@ -801,14 +799,12 @@ const FoliateViewer: React.FC<{
       if (appService?.isIOSApp) {
         view.renderer.setAttribute('gpu-composite', '');
       }
-      if (appService?.isAndroidApp) {
-        if (eink) {
-          view.renderer.setAttribute('eink', '');
-        } else {
-          view.renderer.removeAttribute('eink');
-        }
-        applyEinkMode(eink);
+      if (eink) {
+        view.renderer.setAttribute('eink', '');
+      } else {
+        view.renderer.removeAttribute('eink');
       }
+      applyEinkMode(eink);
       if (bookDoc?.rendition?.layout === 'pre-paginated') {
         view.renderer.setAttribute('zoom', viewSettings.zoomMode);
         view.renderer.setAttribute('spread', viewSettings.spreadMode);

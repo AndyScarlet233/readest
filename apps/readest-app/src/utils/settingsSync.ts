@@ -25,14 +25,11 @@ export const SETTINGS_SYNC_EVENT = 'global-settings-window-sync';
 
 /**
  * Minimal cloud-sync provider selection payload. ONLY the enabled flags
- * plus the selection timestamp — never remote credentials (`webdav.password`
+ * plus the selection timestamp — never credentials (`webdav.password`
  * must not ride window events) and never `lastSyncedAt` (the file-sync
  * engine writes it after every push; if whole slices were broadcast, a
  * reader window's routine cursor save interleaving with a provider
- * switch could win and silently flip the selection back). The LAN pairing
- * token is the one intentional credential exception: it stays inside this
- * app-local Tauri event so other Readest windows can converge, and never
- * enters mDNS or remote sync metadata.
+ * switch could win and silently flip the selection back).
  */
 export interface CloudSyncProviderFlags {
   webdav: { enabled: boolean; providerSelectedAt?: number };
@@ -43,15 +40,6 @@ export interface CloudSyncProviderFlags {
   onedrive?: { enabled: boolean; providerSelectedAt?: number };
   /** Optional: absent on payloads from pre-iCloud windows (treated as unchanged). */
   icloud?: { enabled: boolean; providerSelectedAt?: number };
-  /** Optional: absent on payloads from pre-LAN-sync windows (treated as unchanged). */
-  lan?: {
-    enabled: boolean;
-    host?: string;
-    port?: number;
-    /** LAN-only credential; this event never leaves the Readest app process. */
-    token?: string;
-    providerSelectedAt?: number;
-  };
   /**
    * Optional in two senses: absent on payloads from pre-#5062 windows, and
    * absent when the source window has never had the slice written. `enabled`
@@ -104,9 +92,6 @@ export const mergeSyncedGlobalSettings = (
     if (payload.cloudSyncProviders.icloud) {
       merged.icloud = { ...local.icloud, ...payload.cloudSyncProviders.icloud };
     }
-    if (payload.cloudSyncProviders.lan) {
-      merged.lan = { ...local.lan, ...payload.cloudSyncProviders.lan };
-    }
     if (payload.cloudSyncProviders.readestCloud) {
       merged.readestCloud = {
         ...local.readestCloud,
@@ -155,17 +140,6 @@ export const broadcastGlobalSettings = async (
           enabled: !!settings.icloud?.enabled,
           providerSelectedAt: settings.icloud?.providerSelectedAt,
         },
-        ...(settings.lan
-          ? {
-              lan: {
-                enabled: settings.lan.enabled,
-                host: settings.lan.host,
-                port: settings.lan.port,
-                token: settings.lan.token,
-                providerSelectedAt: settings.lan.providerSelectedAt,
-              },
-            }
-          : {}),
       };
       if (settings.readestCloud) {
         payload.cloudSyncProviders.readestCloud = {

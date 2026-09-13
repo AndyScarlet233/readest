@@ -32,7 +32,6 @@ import {
   S3Settings,
   OneDriveSettings,
   ICloudSettings,
-  LanSyncSettings,
 } from '@/types/settings';
 import { UserStorageQuota, UserDailyTranslationQuota } from '@/types/quota';
 import { getDefaultMaxBlockSize, getDefaultMaxInlineSize } from '@/utils/config';
@@ -184,22 +183,6 @@ export const DEFAULT_ICLOUD_SETTINGS = {
   lastSyncedAt: 0,
 } as ICloudSettings;
 
-// `port` duplicates services/lanSync/lifecycle.ts DEFAULT_LAN_SYNC_PORT and
-// src-tauri lan_sync::DEFAULT_PORT on purpose — constants.ts must stay free of
-// Tauri imports (it feeds web too), so keep the three in sync manually.
-export const DEFAULT_LAN_SYNC_SETTINGS = {
-  enabled: false,
-  host: '',
-  port: 53430,
-  token: '',
-  syncProgress: true,
-  syncNotes: true,
-  syncBooks: false,
-  strategy: 'silent',
-  deviceId: '',
-  lastSyncedAt: 0,
-} as LanSyncSettings;
-
 export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   keepLogin: false,
   alwaysOnTop: false,
@@ -267,7 +250,6 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   s3: DEFAULT_S3_SETTINGS,
   onedrive: DEFAULT_ONEDRIVE_SETTINGS,
   icloud: DEFAULT_ICLOUD_SETTINGS,
-  lan: DEFAULT_LAN_SYNC_SETTINGS,
   aiSettings: DEFAULT_AI_SETTINGS,
 
   lastSyncedAtBooks: 0,
@@ -979,13 +961,11 @@ export const MAX_ZOOM_LEVEL = 500;
 export const MIN_ZOOM_LEVEL = 50;
 export const ZOOM_STEP = 10;
 
-// Reader body font size bounds, shared by the font panel slider and the
-// Ctrl+wheel font-size stepping in useBookShortcuts.
-export const FONT_SIZE_LIMITS = {
-  MIN: 8,
-  MAX: 50,
-  DEFAULT: 16,
-} as const;
+// Reflowable books have no scale factor, so the zoom shortcuts step the book's
+// own font size instead (issue #5694). The bounds match Settings > Font.
+export const MAX_FONT_SIZE = 120;
+export const MIN_FONT_SIZE = 8;
+export const FONT_SIZE_STEP = 1;
 
 export const MAX_CONTRAST = 300;
 export const MIN_CONTRAST = 50;

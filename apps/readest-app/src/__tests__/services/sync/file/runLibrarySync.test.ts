@@ -265,12 +265,12 @@ describe('runFileBookDownload', () => {
     expect(downloadBookFile).toHaveBeenCalledTimes(2);
   });
 
-  test('stamps only downloadedAt when the cover was not downloaded', async () => {
+  test('stamps downloadedAt and coverDownloadedAt on success', async () => {
     downloadBookFile.mockResolvedValueOnce(true);
     const book = makeBook('h1');
     expect(await runFileBookDownload(envConfig, book)).toBe(true);
     expect(book.downloadedAt).toBeTruthy();
-    expect(book.coverDownloadedAt).toBeUndefined();
+    expect(book.coverDownloadedAt).toBeTruthy();
   });
 });
 
@@ -310,9 +310,9 @@ describe('getReadyFileSyncBackends', () => {
     expect(getReadyFileSyncBackends(settings)).toEqual(['webdav', 'gdrive']);
   });
 
-  test('keeps third-party sync available to free users in the fork build', () => {
+  test('excludes everything when the plan gate pauses third-party sync', () => {
     setCachedUserPlan('free');
-    expect(getReadyFileSyncBackends(settings)).toEqual(['webdav', 'gdrive']);
+    expect(getReadyFileSyncBackends(settings)).toEqual([]);
   });
 
   test('rules icloud out off Apple platforms (canBackendRun false)', () => {

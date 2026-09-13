@@ -4,10 +4,10 @@ import { render, cleanup, screen } from '@testing-library/react';
 /**
  * The pairing opt-in on an incoming Nearby BookDrop request.
  *
- * Upstream can show an entitlement-locked pairing row. This community fork
- * deliberately unlocks client-side LAN features through FORK_UNLOCK, so the
- * same control must remain directly usable for a free account and must not
- * advertise a Premium requirement.
+ * The locked (no entitlement) variant must stay legible: daisyUI drops a
+ * `disabled` box to `opacity: .2` on top of an already 20%-opacity border, so
+ * marking it disabled made the control indistinguishable from the dialog
+ * surface. The row itself is the control, so the box is decorative.
  */
 
 vi.mock('@/hooks/useTranslation', () => ({
@@ -63,14 +63,15 @@ describe('ReceiveRequestDialog pairing opt-in', () => {
     expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });
 
-  it('keeps pairing directly available for free users in the fork build', () => {
+  it('keeps the locked box at full opacity rather than marking it disabled', () => {
     renderDialog();
-    expect(screen.queryByText('Premium')).toBeNull();
+    expect(screen.getByText('Premium')).toBeTruthy();
     const box = document.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
     expect(box).not.toBeNull();
+    // `disabled` is what triggers daisyUI's opacity:.2 washout.
     expect(box!.disabled).toBe(false);
     expect(box!.checked).toBe(false);
-    expect(screen.getByText('Always accept from Readest')).toBeTruthy();
+    expect(box!.className).toContain('border-base-content/45');
   });
 
   it('passes the book count to the title so i18next can pluralise it', () => {

@@ -72,14 +72,12 @@ pub struct UseBackgroundAudioRequest {
     pub enabled: bool,
 }
 
-/// Acquire/release the Android WifiManager MulticastLock for one owner.
-/// The Android implementation keeps the shared lock held while any owner is
-/// active (for example LocalSend, persistent LAN sync, or LAN discovery).
+/// Acquire/release the Android WifiManager MulticastLock so LocalSend
+/// discovery announcements are delivered while the service runs.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MulticastLockRequest {
     pub acquire: bool,
-    pub owner: String,
 }
 
 /// Which piece of the OS selection UI to gate: "gesture" suppresses the
@@ -206,6 +204,9 @@ pub struct IAPFetchProductsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct IAPPurchaseProductRequest {
     pub product_id: String,
+    /// Supabase user id, surfaced by StoreKit as the transaction's
+    /// `appAccountToken` so a purchase can be attributed server-side.
+    pub app_account_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -399,6 +400,8 @@ pub struct ClipUrlRequest {
     #[serde(default)]
     pub interactive: Option<bool>,
     #[serde(default)]
+    pub background_capture: Option<bool>,
+    #[serde(default)]
     pub sign_in_hint: Option<String>,
     #[serde(default)]
     pub capture_label: Option<String>,
@@ -422,6 +425,7 @@ pub struct ClipUrlResponse {
 pub struct WebBrowserRequest {
     pub url: String,
     pub download_dir: String,
+    pub capture_script: String,
     #[serde(default)]
     pub background: Option<String>,
     #[serde(default)]
@@ -438,6 +442,14 @@ pub struct WebBrowserResponse {
     /// Set when the user tapped [Open] on an imported book in the chrome.
     #[serde(default)]
     pub open_book_hash: Option<String>,
+    #[serde(default)]
+    pub page: Option<WebBrowserPage>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct WebBrowserPage {
+    pub url: String,
+    pub html: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -568,6 +580,21 @@ pub struct CaptureWebviewRegionResponse {
     pub data: String,
 }
 
+/// Token for the native cover layer put up by `cover_webview_region`
+/// (#6106): the two-column page curl freezes the on-screen pixels of the
+/// incoming column behind it while the column is captured underneath.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverWebviewRegionResponse {
+    pub token: u32,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UncoverWebviewRegionRequest {
+    pub token: u32,
+}
+
 /// iCloud ubiquity-container probe result. `documents_path` is the absolute
 /// path of the container's Documents folder (created on first probe);
 /// `available: false` covers no-iCloud-session, missing entitlement, and
@@ -594,4 +621,16 @@ pub struct ICloudEnsureDownloadedRequest {
 pub struct ICloudEnsureDownloadedResponse {
     /// "ready" | "notFound" | "timeout"
     pub status: String,
+}
+
+/// Native-only cookie exchange for Android, whose Tauri cookie API is unsupported.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebBrowserCookiesRequest {
+    pub url: String,
+    pub set_cookies: Vec<String>,
+}
+#[derive(Debug, Deserialize)]
+pub struct WebBrowserCookiesResponse {
+    pub cookies: String,
 }

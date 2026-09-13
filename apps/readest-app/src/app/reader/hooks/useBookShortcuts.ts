@@ -1,15 +1,23 @@
 import { useEffect, useRef } from 'react';
-import { useEnv } from '@/context/EnvContext';
 import { useReaderStore } from '@/store/readerStore';
 import { useNotebookStore } from '@/store/notebookStore';
 import { isTauriAppPlatform } from '@/services/environment';
 import { useSidebarStore } from '@/store/sidebarStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useBookDataStore } from '@/store/bookDataStore';
-import { saveViewSettings } from '@/helpers/settings';
 import { tauriHandleClose, tauriHandleToggleFullScreen, tauriQuitApp } from '@/utils/window';
 import { eventDispatcher } from '@/utils/event';
-import { FONT_SIZE_LIMITS, MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL, ZOOM_STEP } from '@/services/constants';
+import { useEnv } from '@/context/EnvContext';
+import { saveViewSettings } from '@/helpers/settings';
+import {
+  DEFAULT_BOOK_FONT,
+  FONT_SIZE_STEP,
+  MAX_FONT_SIZE,
+  MAX_ZOOM_LEVEL,
+  MIN_FONT_SIZE,
+  MIN_ZOOM_LEVEL,
+  ZOOM_STEP,
+} from '@/services/constants';
 import { getParagraphActionForKey } from '@/utils/paragraphPresentation';
 import { getScrollGapAttr } from '@/utils/webtoon';
 import { extendSelectionFromContents, KeyModifiers } from '@/utils/sel';
@@ -30,10 +38,10 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
   const { toggleSideBar, setSideBarBookKey, setSideBarVisible, setSearchBarVisible } =
     useSidebarStore();
   const { settings, setSettingsDialogOpen, setSettingsDialogBookKey } = useSettingsStore();
+  const { envConfig } = useEnv();
   const { getBookData, getConfig, setConfig } = useBookDataStore();
   const { toggleNotebook } = useNotebookStore();
   const { getNextBookKey } = useBooksManager();
-  const { envConfig } = useEnv();
   const lastParagraphToggleRef = useRef(0);
   const viewSettings = getViewSettings(sideBarBookKey ?? '');
   const fontSize = viewSettings?.defaultFontSize ?? 16;
@@ -297,18 +305,12 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
     }
   };
 
+  // Reflowable books scale by text, not by page (issue #5694). The new size is
+  // saved with skipGlobal so zooming one book never resizes the whole library.
   const applyFontSize = (fontSize: number) => {
-    if (!sideBarBookKey) return;
-    const viewSettings = getViewSettings(sideBarBookKey);
-    if (!viewSettings) return;
-    const minSize = Math.max(
-      FONT_SIZE_LIMITS.MIN,
-      viewSettings.minimumFontSize ?? FONT_SIZE_LIMITS.MIN,
-    );
-    const clamped = Math.max(
-      minSize,
-      Math.min(FONT_SIZE_LIMITS.MAX, Math.round(fontSize)),
-    );
+    const viewSettings = sideBarBookKey ? getViewSettings(sideBarBookKey) : null;
+    if (!sideBarBookKey || !viewSettings) return;
+    const clamped = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(fontSize)));
     if (clamped === viewSettings.defaultFontSize) return;
     saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', clamped, true);
   };
@@ -319,7 +321,7 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
     if (!sideBarBookKey) return;
     const viewSettings = getViewSettings(sideBarBookKey)!;
     if (!isFixedLayout()) {
-      applyFontSize(viewSettings.defaultFontSize + factor);
+      applyFontSize(viewSettings.defaultFontSize + FONT_SIZE_STEP * factor);
       return;
     }
     const zoomLevel = viewSettings!.zoomLevel + ZOOM_STEP * factor;
@@ -330,7 +332,7 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
     if (!sideBarBookKey) return;
     const viewSettings = getViewSettings(sideBarBookKey)!;
     if (!isFixedLayout()) {
-      applyFontSize(viewSettings.defaultFontSize - factor);
+      applyFontSize(viewSettings.defaultFontSize - FONT_SIZE_STEP * factor);
       return;
     }
     const zoomLevel = viewSettings!.zoomLevel - ZOOM_STEP * factor;
@@ -345,60 +347,22 @@ const useBookShortcuts = ({ sideBarBookKey, bookKeys }: UseBookShortcutsProps) =
     zoomOutFactor();
   };
 
-  // Ctrl+wheel on reflowable books steps the font size instead of the page
-  // zoom level. Raw wheel deltas accumulate so trackpad inertia changes the
-  // size one pixel at a time; the residue drops when clamped at a bound so
-  // scrolling back doesn't fire a burst of changes.
-  const fontSizeWheelAccumRef = useRef(0);
-
-  const stepFontSize = (delta: number) => {
-    if (!sideBarBookKey) return;
-    const viewSettings = getViewSettings(sideBarBookKey);
-    if (!viewSettings) return;
-    const minSize = Math.max(
-      FONT_SIZE_LIMITS.MIN,
-      viewSettings.minimumFontSize ?? FONT_SIZE_LIMITS.MIN,
-    );
-    const initialSize = viewSettings.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT;
-    let size = initialSize;
-    fontSizeWheelAccumRef.current += delta;
-    while (Math.abs(fontSizeWheelAccumRef.current) >= 100) {
-      const step = fontSizeWheelAccumRef.current > 0 ? 1 : -1;
-      fontSizeWheelAccumRef.current -= step * 100;
-      const next = Math.min(FONT_SIZE_LIMITS.MAX, Math.max(minSize, size + step));
-      if (next === size) {
-        fontSizeWheelAccumRef.current = 0;
-        break;
-      }
-      size = next;
-    }
-    if (size !== initialSize) {
-      saveViewSettings(envConfig, sideBarBookKey, 'defaultFontSize', size, true);
-    }
-  };
-
   const handleZoomIn = (event: CustomEvent) => {
     const factor = event.detail?.factor || 1.0;
-    if (getBookData(sideBarBookKey ?? '')?.isFixedLayout) {
-      zoomInFactor(factor);
-    } else {
-      stepFontSize(factor * 100);
-    }
+    zoomInFactor(factor);
   };
 
   const handleZoomOut = (event: CustomEvent) => {
     const factor = event.detail?.factor || 1.0;
-    if (getBookData(sideBarBookKey ?? '')?.isFixedLayout) {
-      zoomOutFactor(factor);
-    } else {
-      stepFontSize(-factor * 100);
-    }
+    zoomOutFactor(factor);
   };
 
   const resetZoom = () => {
     if (!sideBarBookKey) return;
     if (!isFixedLayout()) {
-      applyFontSize(settings.globalViewSettings?.defaultFontSize ?? FONT_SIZE_LIMITS.DEFAULT);
+      applyFontSize(
+        settings.globalViewSettings?.defaultFontSize ?? DEFAULT_BOOK_FONT.defaultFontSize,
+      );
       return;
     }
     applyZoomLevel(100);

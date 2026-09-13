@@ -13,7 +13,6 @@ import { SyncClient } from '@/libs/sync';
 import { BookOrbitClient } from '@/services/bookorbit/BookOrbitClient';
 import { pushStatsToBookOrbit } from '@/services/bookorbit/statsPush';
 import { pushStats, pullStats } from '@/services/statistics/statsSync';
-import { pushStatsSnapshot, pullStatsSnapshots } from '@/services/statistics/statsFileSync';
 import { isSyncCategoryEnabled } from '@/services/sync/syncCategories';
 import { useSettingsStore } from '@/store/settingsStore';
 import { eventDispatcher } from '@/utils/event';
@@ -36,7 +35,6 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   const { user } = useAuth();
   const coreRef = useRef(new TrackerCore(DEFAULT_STATS_TRACKING_CONFIG));
   const dbRef = useRef<StatisticsDb | null>(null);
-  const pendingEventsRef = useRef<FlushedEvent[]>([]);
   const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // While this book is being read aloud, TtsStatsRecorder owns the clock and
@@ -77,8 +75,6 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
 
   const pushToAllTargets = (db: StatisticsDb) => {
     if (syncEnabled()) runBestEffort(pushStats(db, new SyncClient()));
-    // File-backend snapshots (LAN/WebDAV) need no Readest account.
-    runBestEffort(pushStatsSnapshot(db));
     const bookOrbitPush = bookOrbitStatsPush(db);
     if (bookOrbitPush) runBestEffort(bookOrbitPush);
   };
@@ -95,13 +91,10 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
     if (!appService) return;
     let cancelled = false;
     runBestEffort(
-      StatisticsDb.open(appService).then(async (db) => {
-        dbRef.current = db;
-        const queuedEvents = pendingEventsRef.current.splice(0);
-        if (queuedEvents.length > 0) await persist(queuedEvents);
+      StatisticsDb.open(appService).then((db) => {
         if (cancelled) return;
+        dbRef.current = db;
         if (syncEnabled()) runBestEffort(pullStats(db, new SyncClient()));
-        runBestEffort(pullStatsSnapshots(db));
       }),
     );
     return () => {
@@ -111,13 +104,9 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
   }, [appService]);
 
   // Persist flushed events into the statistics DB.
-  async function persist(events: FlushedEvent[]): Promise<void> {
+  const persist = async (events: FlushedEvent[]): Promise<void> => {
     const db = dbRef.current;
-    if (!bookMd5 || events.length === 0) return;
-    if (!db) {
-      pendingEventsRef.current.push(...events);
-      return;
-    }
+    if (!db || !bookMd5 || events.length === 0) return;
     try {
       const idBook = await db.upsertBook({ bookMd5, title, authors });
       for (const e of events) await db.insertPageEvent(idBook, e);
@@ -129,7 +118,7 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
       // never reject, so the fire-and-forget dispatch sites stay safe.
       console.warn('[stats] failed to persist reading events:', err);
     }
-  }
+  };
 
   const armIdle = () => {
     if (idleRef.current) clearTimeout(idleRef.current);
@@ -176,35 +165,18 @@ export default function ReadingStatsTracker({ bookKey }: { bookKey: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookKey]);
 
-  // Tab/window visibility and user activity. A tracker flushes on idle/hidden;
-  // resume activity must open the current page again even when the page number
-  // did not change.
+  // Tab/window visibility.
   useEffect(() => {
-    const onResume = () => {
-      if (document.visibilityState === 'visible' && !ttsPlayingRef.current) {
-        openPageAt(getBookProgress(bookKey)?.pageinfo);
-      }
-    };
     const onVis = () => {
       if (document.visibilityState === 'hidden') {
         if (idleRef.current) clearTimeout(idleRef.current);
         void persist(coreRef.current.onHide(nowSec()));
-      } else {
-        onResume();
       }
     };
     document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('focus', onResume);
-    window.addEventListener('pointerdown', onResume);
-    window.addEventListener('keydown', onResume);
-    return () => {
-      document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('focus', onResume);
-      window.removeEventListener('pointerdown', onResume);
-      window.removeEventListener('keydown', onResume);
-    };
+    return () => document.removeEventListener('visibilitychange', onVis);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookKey, bookMd5]);
+  }, [bookMd5]);
 
   // Book close (unmount).
   useEffect(() => {

@@ -92,7 +92,15 @@ export const createWebDAVProvider = (settings: WebDAVSettings): FileSyncProvider
     provider.uploadStream = async (remotePath, localPath) => {
       const url = buildRequestUrl(settings.serverUrl, remotePath);
       try {
-        await tauriUpload(url, localPath, 'PUT', undefined, authHeaders());
+        // tauriUpload's TS type says Map, but the Rust command accepts a JSON
+        // object → HashMap<String, String>; pass the headers object directly.
+        await tauriUpload(
+          url,
+          localPath,
+          'PUT',
+          undefined,
+          authHeaders() as unknown as Map<string, string>,
+        );
         return true;
       } catch (e) {
         console.warn('WebDAVProvider.uploadStream failed', remotePath, e);
@@ -102,20 +110,11 @@ export const createWebDAVProvider = (settings: WebDAVSettings): FileSyncProvider
     provider.downloadStream = async (remotePath, localPath, onProgress) => {
       const url = buildRequestUrl(settings.serverUrl, remotePath);
       try {
-        await tauriDownload(
-          url,
-          localPath,
-          onProgress,
-          authHeaders(),
-          undefined,
-          undefined,
-          undefined,
-          { resume: true },
-        );
+        await tauriDownload(url, localPath, onProgress, authHeaders());
         return true;
       } catch (e) {
         console.warn('WebDAVProvider.downloadStream failed', remotePath, e);
-        throw mapError(e);
+        return false;
       }
     };
   }

@@ -42,12 +42,11 @@ function makeDeps(
     importBook,
     osPlatform: over.osPlatform ?? ('linux' as OsPlatform),
   } as unknown as AppService;
-  // The Manage Sync "book" category is opt-in (default OFF): cloud book-file
-  // upload only happens with an explicit `true`; leaving syncCategories unset
-  // mirrors that default-off state.
+  // The Manage Sync "book" category defaults on; only an explicit `false`
+  // opts out of auto-upload. Leaving syncCategories unset mirrors that default.
   const settings = {
     externalLibraryFolders: over.externalLibraryFolders,
-    syncCategories: over.bookSyncEnabled === undefined ? undefined : { book: over.bookSyncEnabled },
+    syncCategories: over.bookSyncEnabled === false ? { book: false } : undefined,
   } as SystemSettings;
   return { appService, settings, isLoggedIn: over.isLoggedIn ?? false, importBook };
 }
@@ -165,18 +164,9 @@ describe('ingestFile', () => {
     expect(transferManager.queueUpload).toHaveBeenCalledTimes(1);
   });
 
-  test('does not queue an upload by default — cloud book sync is opt-in', async () => {
+  test('queues an upload by default without forceUpload', async () => {
     const { appService, settings, isLoggedIn } = makeDeps({
       isLoggedIn: true,
-    });
-    await ingestFile({ file: 'book.epub', books: [] }, { appService, settings, isLoggedIn });
-    expect(transferManager.queueUpload).not.toHaveBeenCalled();
-  });
-
-  test('queues an upload when Books sync is opted in', async () => {
-    const { appService, settings, isLoggedIn } = makeDeps({
-      isLoggedIn: true,
-      bookSyncEnabled: true,
     });
     await ingestFile({ file: 'book.epub', books: [] }, { appService, settings, isLoggedIn });
     expect(transferManager.queueUpload).toHaveBeenCalledTimes(1);
@@ -640,23 +630,9 @@ describe('ingestFile', () => {
   // shape is identical to a hash-copy book; uploadBook reads from book.filePath
   // when set, which is asserted in cloud-service.test.ts.
 
-  test('does not queue an in-place book by default (book.filePath set)', async () => {
+  test('queues an in-place book by default (book.filePath set)', async () => {
     const { appService, settings, isLoggedIn } = makeDeps({
       isLoggedIn: true,
-      externalLibraryFolders: ['/Users/me/Library'],
-      importResult: makeBook({ filePath: '/Users/me/Library/sample.epub' }),
-    });
-    await ingestFile(
-      { file: '/Users/me/Library/sample.epub', books: [] },
-      { appService, settings, isLoggedIn },
-    );
-    expect(transferManager.queueUpload).not.toHaveBeenCalled();
-  });
-
-  test('queues an in-place book when Books sync is opted in', async () => {
-    const { appService, settings, isLoggedIn } = makeDeps({
-      isLoggedIn: true,
-      bookSyncEnabled: true,
       externalLibraryFolders: ['/Users/me/Library'],
       importResult: makeBook({ filePath: '/Users/me/Library/sample.epub' }),
     });

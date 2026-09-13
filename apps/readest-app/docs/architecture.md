@@ -527,13 +527,23 @@ is small and focused:
 ```
 lib.rs              -> command registration, scope grants, deep links, builder
 main.rs             -> entrypoint
-clip_url.rs         -> clipboard URL extraction
+clip_url.rs         -> rendered web-page capture
+browser_fetch.rs    -> resource requests using the browser session
+browser_cookies_macos.rs -> access to the WebKit cookie store
 dir_scanner.rs      -> recursive directory scan (used by library import)
 transfer_file.rs    -> chunked upload/download for big files
 discord_rpc.rs      -> Discord Rich Presence (desktop only)
 android/, macos/,
 windows/            -> per-platform glue
 ```
+
+Novel imports and browser-session resource requests reject explicit private IPs
+and local hostnames; native HTTP redirects are checked again before fetching.
+This is a URL guard, not a network sandbox: DNS/proxy resolution and browser
+navigation redirects remain platform-managed. Cancelling a novel import returns
+to its preview immediately; an in-flight rendered capture finishes its bounded
+native cleanup before the next queued capture starts. Desktop capture listeners
+are owned by the command and released on completion, cancellation, or timeout.
 
 Everything else is delegated to **Tauri plugins**, mostly the published
 `tauri-plugin-*` crates:

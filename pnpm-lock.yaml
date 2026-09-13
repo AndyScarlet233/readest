@@ -203,9 +203,6 @@ importers:
       '@tauri-apps/api':
         specifier: 2.11.1
         version: 2.11.1
-      '@tauri-apps/plugin-barcode-scanner':
-        specifier: ^2.4.5
-        version: 2.4.5
       '@tauri-apps/plugin-biometric':
         specifier: ^2.3.3
         version: 2.3.3
@@ -380,9 +377,6 @@ importers:
       posthog-js:
         specifier: ^1.246.0
         version: 1.373.2
-      qrcode.react:
-        specifier: ^4.2.0
-        version: 4.2.0(react@19.2.8)
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -3494,9 +3488,6 @@ packages:
     resolution: {integrity: sha512-R8xGtMpwyetawSqm9kYOuMmEqkhUbvcUy8n0aNXIxollKBLESUu5f4Fx+64hgASYm1H+jSWq6jCW6zqTnH6hqQ==}
     engines: {node: '>= 10'}
     hasBin: true
-
-  '@tauri-apps/plugin-barcode-scanner@2.4.5':
-    resolution: {integrity: sha512-sIPRYEfxww8/y8skZ2LcAp/h5bwvlHkQiq+3w6QEl+2BHs13xnpn7hP+pv4fkBs8DyDfpUbOBIYS5YBwP7x1QQ==}
 
   '@tauri-apps/plugin-biometric@2.3.3':
     resolution: {integrity: sha512-lNPZhN/LL9IGUxdJeUpltuxMZ0qHydhqtNEjgXW+YFLJWpt2WJGDlaGs6iDttj0PArfLYe0/CruAsZ8Anl3CFQ==}
@@ -7255,11 +7246,6 @@ packages:
   pure-rand@8.4.0:
     resolution: {integrity: sha512-IoM8YF/jY0hiugFo/wOWqfmarlE6J0wc6fDK1PhftMk7MGhVZl88sZimmqBBFomLOCSmcCCpsfj7wXASCpvK9A==}
 
-  qrcode.react@4.2.0:
-    resolution: {integrity: sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
   qs@6.16.0:
     resolution: {integrity: sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==}
     engines: {node: '>=0.6'}
@@ -8184,7 +8170,6 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
-    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -11950,10 +11935,6 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.11.4
       '@tauri-apps/cli-win32-x64-msvc': 2.11.4
 
-  '@tauri-apps/plugin-barcode-scanner@2.4.5':
-    dependencies:
-      '@tauri-apps/api': 2.11.1
-
   '@tauri-apps/plugin-biometric@2.3.3':
     dependencies:
       '@tauri-apps/api': 2.11.1
@@ -14380,7 +14361,7 @@ snapshots:
       get-proto: 1.0.1
       gopd: 1.2.0
       has-symbols: 1.1.0
-      hasown: 2.0.4
+      hasown: 2.0.3
       math-intrinsics: 1.1.0
 
   get-nonce@1.0.1: {}
@@ -16268,10 +16249,6 @@ snapshots:
   punycode@2.3.1: {}
 
   pure-rand@8.4.0: {}
-
-  qrcode.react@4.2.0(react@19.2.8):
-    dependencies:
-      react: 19.2.8
 
   qs@6.16.0:
     dependencies:

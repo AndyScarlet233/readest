@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import {
-  createProgressThrottle,
-  normalizeTransferOptions,
-  webDownload,
-  type ProgressPayload,
-} from '@/utils/transfer';
+import { createProgressThrottle, webDownload, type ProgressPayload } from '@/utils/transfer';
 
 const buildResponse = (
   body: Uint8Array,
@@ -95,13 +90,6 @@ describe('webDownload', () => {
     globalThis.fetch = vi.fn(async () => buildResponse(bytes, null)) as unknown as typeof fetch;
     const result = await webDownload('https://example.test/file');
     expect(await result.blob.arrayBuffer()).toEqual(bytes.buffer);
-  });
-});
-
-describe('normalizeTransferOptions', () => {
-  test('keeps resumable options opt-in', () => {
-    expect(normalizeTransferOptions()).toEqual({ resume: false });
-    expect(normalizeTransferOptions({ resume: true })).toEqual({ resume: true });
   });
 });
 

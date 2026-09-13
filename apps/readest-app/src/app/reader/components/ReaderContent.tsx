@@ -47,7 +47,6 @@ import Spinner from '@/components/Spinner';
 import SideBar from './sidebar/SideBar';
 import Notebook from './notebook/Notebook';
 import LocalSendManager from '@/components/localsend/LocalSendManager';
-import LanSyncManager from '@/components/lan/LanSyncManager';
 import BooksGrid from './BooksGrid';
 import SettingsDialog from '@/components/settings/SettingsDialog';
 import AudiobookPairingDialog from './audiobook/AudiobookPairingDialog';
@@ -422,7 +421,6 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
       )}
       <Notebook />
       <LocalSendManager />
-      <LanSyncManager />
       {showDetailsBook && (
         <BookDetailModal
           isOpen={!!showDetailsBook}

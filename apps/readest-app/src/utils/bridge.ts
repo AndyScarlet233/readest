@@ -146,73 +146,14 @@ export async function invokeUseBackgroundAudio(request: UseBackgroundAudioReques
 }
 
 /**
- * Acquire or release the Android WifiManager MulticastLock for one owner.
- * Android only; callers gate on isAndroidApp. The native bridge keeps the
- * shared lock held until every owner has released it.
- *
- * Requests are reference-counted and serialized per webview. This keeps an
- * old effect cleanup from releasing a newer lease for the same owner while
- * still allowing independent callers to share one native owner.
+ * Acquire or release the Android WifiManager MulticastLock so LocalSend
+ * discovery announcements are delivered. Android only; a no-op elsewhere
+ * (callers gate on isAndroidApp).
  */
-export type MulticastLockOwner = 'localsend' | 'lan-sync' | 'lan-discovery';
-
-const multicastLockLeaseCounts: Record<MulticastLockOwner, number> = {
-  localsend: 0,
-  'lan-sync': 0,
-  'lan-discovery': 0,
-};
-const persistentMulticastLockStates: Record<MulticastLockOwner, boolean> = {
-  localsend: false,
-  'lan-sync': false,
-  'lan-discovery': false,
-};
-let multicastLockQueue: Promise<void> = Promise.resolve();
-
-const updateMulticastLock = async (acquire: boolean, owner: MulticastLockOwner): Promise<void> => {
-  const previousCount = multicastLockLeaseCounts[owner];
-  if (!acquire && previousCount === 0) return;
-
-  const nextCount = acquire ? previousCount + 1 : previousCount - 1;
-  multicastLockLeaseCounts[owner] = nextCount;
-  if ((previousCount === 0) !== (nextCount === 0)) {
-    try {
-      await invoke('plugin:native-bridge|set_multicast_lock', {
-        payload: { acquire, owner },
-      });
-    } catch (error) {
-      multicastLockLeaseCounts[owner] = previousCount;
-      throw error;
-    }
-  }
-};
-
-export function setMulticastLock(acquire: boolean, owner: MulticastLockOwner): Promise<void> {
-  const operation = multicastLockQueue.then(() => updateMulticastLock(acquire, owner));
-  multicastLockQueue = operation.catch(() => {});
-  return operation;
-}
-
-/**
- * Set one process-wide lease for a long-lived service. Route-level managers can
- * call this repeatedly without accumulating leases; only the state change is
- * reflected in the reference-counted owner above.
- */
-export function setPersistentMulticastLock(
-  acquire: boolean,
-  owner: MulticastLockOwner,
-): Promise<void> {
-  const operation = multicastLockQueue.then(async () => {
-    if (persistentMulticastLockStates[owner] === acquire) return;
-    persistentMulticastLockStates[owner] = acquire;
-    try {
-      await updateMulticastLock(acquire, owner);
-    } catch (error) {
-      persistentMulticastLockStates[owner] = !acquire;
-      throw error;
-    }
+export async function setMulticastLock(acquire: boolean): Promise<void> {
+  await invoke('plugin:native-bridge|set_multicast_lock', {
+    payload: { acquire },
   });
-  multicastLockQueue = operation.catch(() => {});
-  return operation;
 }
 
 // Suppress a piece of the OS text-selection UI that would fight the reader's
@@ -405,6 +346,29 @@ export async function captureWebviewRegion(
   return await invoke<ArrayBuffer>('plugin:native-bridge|capture_webview_region', {
     payload: request,
   });
+}
+
+export interface CoverWebviewRegionResponse {
+  token: number;
+}
+
+/**
+ * Freeze the on-screen pixels of a webview region behind a native snapshot
+ * view that `captureWebviewRegion` does not see (iOS only so far). The
+ * two-column page curl uses it to capture the incoming column under its
+ * overlay without ever showing it (#6106). Rejects where unimplemented.
+ */
+export async function coverWebviewRegion(
+  request: CaptureWebviewRegionRequest,
+): Promise<CoverWebviewRegionResponse> {
+  return await invoke<CoverWebviewRegionResponse>('plugin:native-bridge|cover_webview_region', {
+    payload: request,
+  });
+}
+
+/** Remove the cover put up by `coverWebviewRegion`; stale tokens are ignored. */
+export async function uncoverWebviewRegion(request: { token: number }): Promise<void> {
+  await invoke('plugin:native-bridge|uncover_webview_region', { payload: request });
 }
 
 // ── Sync passphrase keychain ────────────────────────────────────────────

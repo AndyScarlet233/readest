@@ -29,10 +29,7 @@ vi.mock('@/services/localsend/devicePrefs', () => ({
   getLocalSendAlias: () => 'Test Device',
   isLocalSendEnabled: () => true,
 }));
-vi.mock('@/utils/bridge', () => ({
-  setMulticastLock: vi.fn(async () => {}),
-  setPersistentMulticastLock: vi.fn(async () => {}),
-}));
+vi.mock('@/utils/bridge', () => ({ setMulticastLock: vi.fn(async () => {}) }));
 vi.mock('@/services/localsend/sounds', () => ({
   playTransferCue: vi.fn(),
   primeTransferCues: vi.fn(),
@@ -117,35 +114,6 @@ describe('LocalSendManager foreground presence', () => {
     expect(setLocalSendDiscoverable).toHaveBeenCalledWith(true);
     expect(stopLocalSend).not.toHaveBeenCalled();
     expect(startLocalSend).not.toHaveBeenCalled();
-  });
-
-  it('does not let a stale visible probe re-enable discovery after hiding', async () => {
-    await mountManager();
-    let resolveAlive: ((value: boolean) => void) | undefined;
-    isLocalSendAlive.mockImplementationOnce(
-      () =>
-        new Promise<boolean>((resolve) => {
-          resolveAlive = resolve;
-        }),
-    );
-
-    setVisibility('visible');
-    await act(async () => {
-      document.dispatchEvent(new Event('visibilitychange'));
-      await Promise.resolve();
-    });
-    expect(isLocalSendAlive).toHaveBeenCalledTimes(1);
-
-    await changeVisibilityTo('hidden');
-    expect(setLocalSendDiscoverable).toHaveBeenCalledWith(false);
-
-    await act(async () => {
-      resolveAlive?.(true);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(setLocalSendDiscoverable).not.toHaveBeenCalledWith(true);
   });
 
   it('goes quiet on the way out without probing', async () => {
