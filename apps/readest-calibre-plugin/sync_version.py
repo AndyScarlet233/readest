@@ -9,6 +9,11 @@ literal drifts the moment the app is bumped, and a drifted value is what
 calibre then shows in Preferences > Plugins. `make zip` runs this first, and
 release.yml stamps releases from the same package.json.
 
+Calibre's plugin version is a three-integer tuple, while Readest releases may
+use a SemVer prerelease suffix such as 0.12.8-fork.1. The helper therefore
+keeps the complete release string for artifact naming and exposes the numeric
+SemVer core separately for PLUGIN_VERSION.
+
 Build-time only: not part of FILES, so it never ships inside the zip.
 """
 
@@ -23,10 +28,15 @@ PATTERN = re.compile(r'^PLUGIN_VERSION = \((\d+), (\d+), (\d+)\)', re.MULTILINE)
 SEMVER_CORE = re.compile(r'^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$')
 
 
-def app_version(path=PACKAGE_JSON):
-    """(major, minor, patch) from the app's SemVer package version."""
+def app_version_string(path=PACKAGE_JSON):
+    """Return the complete app release version from package.json."""
     with open(path, encoding='utf-8') as handle:
-        raw = json.load(handle)['version']
+        return json.load(handle)['version']
+
+
+def app_version(path=PACKAGE_JSON):
+    """Return the numeric (major, minor, patch) core for calibre."""
+    raw = app_version_string(path)
     match = SEMVER_CORE.fullmatch(raw)
     if not match:
         raise ValueError(f'Unsupported app version: {raw!r}')
