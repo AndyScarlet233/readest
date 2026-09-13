@@ -1,0 +1,69 @@
+name: Temporary prepare fork version
+
+on:
+  push:
+    paths:
+      - '.github/workflows/temporary-prepare-fork-version.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update fork version metadata and README
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const version = '0.12.8-fork.1';
+
+          const packagePath = 'apps/readest-app/package.json';
+          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          pkg.version = version;
+          fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+
+          const releaseNotesPath = 'apps/readest-app/release-notes.json';
+          const releaseNotes = JSON.parse(fs.readFileSync(releaseNotesPath, 'utf8'));
+          releaseNotes.releases = {
+            [version]: {
+              date: '2026-09-13',
+              notes: [
+                'Fork：基于官方 Readest 0.12.8，同步上游的新功能与修复',
+                '同步：解除 WebDAV、Google Drive、S3、OneDrive 等第三方同步的 Premium 限制，继续使用用户自己的存储服务',
+                'TTS：解除离线语音缓存与预下载的 Premium 限制',
+                '局域网：解除 Nearby BookDrop 可信设备配对限制',
+                '边界：不解锁 Readest Cloud 存储、服务器翻译额度、Send to Readest 邮件等依赖官方服务器资源的功能'
+              ]
+            },
+            ...releaseNotes.releases
+          };
+          fs.writeFileSync(releaseNotesPath, JSON.stringify(releaseNotes, null, 2) + '\n');
+
+          const readmePath = 'README.md';
+          let readme = fs.readFileSync(readmePath, 'utf8');
+          if (!readme.includes('## 本分支版本下载')) {
+            const section = `## 本分支版本下载\n\n本仓库提供两条不同的发布路线。它们都基于 Readest 开源代码，但侧重点不同，请按自己的需求选择。\n\n### 0.12.8-fork.1 — 跟进上游 / 解锁非云端付费功能\n\n[下载 0.12.8-fork.1](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.8-fork.1)\n\n基于官方 Readest 0.12.8。保留新版上游功能与后续同步能力，并解除 WebDAV、Google Drive、S3、OneDrive 等第三方同步、TTS 离线缓存以及 Nearby BookDrop 可信设备配对等不依赖官方服务器资源的 Premium 限制。Readest Cloud 存储空间、服务器翻译额度、Send to Readest 邮件等需要官方云端资源的功能仍按原规则工作。此版本是目前主要维护路线。\n\n### v0.12.6.22 — 完整局域网书籍同步版 / 暂停开发\n\n[下载 v0.12.6.22](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.6.22)\n\n这是 0.12.6 系列最后一个公开版本，包含一套完整的局域网书籍同步机制，适合希望在自己的设备之间直接同步书籍的用户。由于这套机制涉及较多底层同步改动，跟随上游持续更新时适配成本较高，目前暂停继续开发。现有版本与 Release 会继续保留，方便需要这套局域网同步方案的用户使用。`;
+            const marker = '\n## Features\n';
+            if (!readme.includes(marker)) throw new Error('README Features marker not found');
+            readme = readme.replace(marker, `\n${section}\n\n## Features\n`);
+            fs.writeFileSync(readmePath, readme);
+          }
+          NODE
+          test "$(node -p "require('./apps/readest-app/package.json').version")" = "0.12.8-fork.1"
+          node -e "const r=require('./apps/readest-app/release-notes.json'); if(!r.releases['0.12.8-fork.1']) process.exit(1)"
+          grep -Fq '下载 0.12.8-fork.1' README.md
+          grep -Fq '下载 v0.12.6.22' README.md
+          git diff --check
+      - name: Commit changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md apps/readest-app/package.json apps/readest-app/release-notes.json
+          git commit -m 'release: prepare 0.12.8-fork.1'
+          git push origin HEAD:main
