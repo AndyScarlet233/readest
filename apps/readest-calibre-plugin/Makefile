@@ -1,9 +1,8 @@
 NAME = Readest
-# The app's package.json is the single source of truth for the version, the
-# same one release.yml reads. `version` stamps it into __init__.py, which is
-# what calibre shows in Preferences > Plugins.
-VERSION = $(shell python3 -c "from sync_version import app_version; \
-	print('.'.join(str(p) for p in app_version()))")
+# Keep the full app release version in the archive filename (for example
+# 0.12.8-fork.1), while sync_version.py writes only the numeric SemVer core
+# into calibre's three-integer PLUGIN_VERSION tuple.
+VERSION = $(shell python3 -c "from sync_version import app_version_string; print(app_version_string())")
 ZIP = dist/$(NAME)-$(VERSION).calibre-plugin.zip
 
 FILES = __init__.py api.py config.py dialogs.py oauth.py ui.py wire.py worker.py \
