@@ -1,4 +1,3 @@
-# Temporary one-shot workflow. It deletes itself after a successful migration.
 name: Temporary bilingual README migration
 
 on:
@@ -14,111 +13,35 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-
       - name: Split default English README and Simplified Chinese README
+        env:
+          EN_B64: IyMgRm9yayBSZWxlYXNlcwoKVGhpcyByZXBvc2l0b3J5IG1haW50YWlucyB0d28gUmVhZGVzdC1iYXNlZCByZWxlYXNlIHRyYWNrcyB3aXRoIGRpZmZlcmVudCBnb2Fscy4gQ2hvb3NlIHRoZSBvbmUgdGhhdCBiZXN0IGZpdHMgaG93IHlvdSB3YW50IHRvIHVzZSB0aGUgYXBwLgoKIyMjIDAuMTIuOC1mb3JrLjEg4oCUIFVwc3RyZWFtIHRyYWNraW5nIC8gbG9jYWwgcHJlbWl1bSBnYXRlcyB1bmxvY2tlZAoKW0Rvd25sb2FkIDAuMTIuOC1mb3JrLjFdKGh0dHBzOi8vZ2l0aHViLmNvbS9BbmR5U2NhcmxldDIzMy9yZWFkZXN0L3JlbGVhc2VzL3RhZy92MC4xMi44LWZvcmsuMSkKCkJhc2VkIG9uIG9mZmljaWFsIFJlYWRlc3QgMC4xMi44LiBUaGlzIGlzIHRoZSBwcmltYXJ5IG1haW50YWluZWQgdHJhY2s6IGl0IGZvbGxvd3MgdXBzdHJlYW0gY2hhbmdlcyB3aGlsZSByZW1vdmluZyBQcmVtaXVtIHJlc3RyaWN0aW9ucyBmcm9tIGZlYXR1cmVzIHRoYXQgdXNlIGxvY2FsIHJlc291cmNlcyBvciBzdG9yYWdlIHNlcnZpY2VzIHN1cHBsaWVkIGJ5IHRoZSB1c2VyLCBpbmNsdWRpbmcgV2ViREFWLCBHb29nbGUgRHJpdmUsIFMzLCBPbmVEcml2ZSwgb2ZmbGluZSBUVFMgY2FjaGluZywgYW5kIHRydXN0ZWQtZGV2aWNlIHBhaXJpbmcgZm9yIE5lYXJieSBCb29rRHJvcC4gRmVhdHVyZXMgdGhhdCBjb25zdW1lIG9mZmljaWFsIFJlYWRlc3Qgc2VydmVyIHJlc291cmNlcywgaW5jbHVkaW5nIFJlYWRlc3QgQ2xvdWQgc3RvcmFnZSwgc2VydmVyLXNpZGUgdHJhbnNsYXRpb24gcXVvdGEsIGFuZCBTZW5kIHRvIFJlYWRlc3QgYnkgZW1haWwsIGNvbnRpbnVlIHRvIGZvbGxvdyB0aGUgdXBzdHJlYW0gcnVsZXMuCgojIyMgdjAuMTIuNi4yMiDigJQgRnVsbCBMQU4gYm9vayBzeW5jIC8gZGV2ZWxvcG1lbnQgcGF1c2VkCgpbRG93bmxvYWQgdjAuMTIuNi4yMl0oaHR0cHM6Ly9naXRodWIuY29tL0FuZHlTY2FybGV0MjMzL3JlYWRlc3QvcmVsZWFzZXMvdGFnL3YwLjEyLjYuMjIpCgpUaGlzIGlzIHRoZSBmaW5hbCBwdWJsaWMgcmVsZWFzZSBvZiB0aGUgMC4xMi42IGxpbmUuIEl0IGNvbnRhaW5zIGEgY29tcGxldGUgTEFOIGJvb2stc3luYyBpbXBsZW1lbnRhdGlvbiBmb3IgdXNlcnMgd2hvIHdhbnQgZGlyZWN0IGJvb2sgdHJhbnNmZXIgYW5kIHN5bmNocm9uaXphdGlvbiBiZXR3ZWVuIHRoZWlyIG93biBkZXZpY2VzLiBCZWNhdXNlIHRoaXMgc3Vic3lzdGVtIHJlcXVpcmVzIGRlZXBlciBzeW5jaHJvbml6YXRpb24gY2hhbmdlcyBhbmQgaXMgZXhwZW5zaXZlIHRvIGtlZXAgcmViYXNpbmcgb250byB1cHN0cmVhbSwgYWN0aXZlIGRldmVsb3BtZW50IGlzIGN1cnJlbnRseSBwYXVzZWQuIFRoZSByZWxlYXNlIHJlbWFpbnMgYXZhaWxhYmxlIGZvciB1c2VycyB3aG8gc3RpbGwgbmVlZCB0aGF0IHdvcmtmbG93LgoK
+          ZH_B64: PGRpdiBhbGlnbj0iY2VudGVyIj4KICA8YSBocmVmPSJodHRwczovL3JlYWRlc3QuY29tIiB0YXJnZXQ9Il9ibGFuayI+CiAgICA8aW1nIHNyYz0iaHR0cHM6Ly9naXRodWIuY29tL3JlYWRlc3QvcmVhZGVzdC9ibG9iL21haW4vYXBwcy9yZWFkZXN0LWFwcC9zcmMtdGF1cmkvaWNvbnMvaWNvbi5wbmc/cmF3PXRydWUiIGFsdD0iUmVhZGVzdCBMb2dvIiB3aWR0aD0iMjAlIiAvPgogIDwvYT4KICA8aDE+UmVhZGVzdCDnpL7ljLrliIbmlK88L2gxPgogIDxwPjxhIGhyZWY9Ii4vUkVBRE1FLm1kIj5FbmdsaXNoPC9hPiB8IDxzdHJvbmc+566A5L2T5Lit5paHPC9zdHJvbmc+PC9wPgo8L2Rpdj4KClJlYWRlc3Qg5piv5LiA5qy+5byA5rqQ55S15a2Q5Lmm6ZiF6K+75Zmo77yM5pSv5oyBIFdpbmRvd3PjgIFtYWNPU+OAgUxpbnV444CBQW5kcm9pZOOAgWlPUyDkuI4gV2Vi44CC5pys5LuT5bqT5pivIFJlYWRlc3Qg55qE56S+5Yy657u05oqk5YiG5pSv77yM6buY6K6kIFJFQURNRSDkvb/nlKjoi7HmlofvvIzov5nkuKrpobXpnaLmj5DkvpvnroDkvZPkuK3mlofor7TmmI7jgIIKCiMjIOWFs+S6jui/meS4quWIhuaUrwoK5b2T5YmN5Li757q/5Z+65LqO5a6Y5pa5IFJlYWRlc3QgMC4xMi4477yM5bm25bC96YeP5L+d5oyB5ZCO57ut6Lef6L+b5LiK5ri455qE6IO95Yqb44CC6L+Z5Liq5YiG5pSv5LiN5Lya5oqK6LSm5Y+35pW05L2T5Lyq6KOF5oiQIFByZW1pdW3vvIzogIzmmK/lj6rop6PpmaTpgqPkupvkuI3pnIDopoHmtojogJcgUmVhZGVzdCDlrpjmlrnmnI3liqHlmajotYTmupDnmoTlip/og73pmZDliLbjgIIKCuW3sue7j+W8gOaUvueahOWKn+iDveWMheaLrCBXZWJEQVbjgIFHb29nbGUgRHJpdmXjgIFTM+OAgU9uZURyaXZlIOetieeUseeUqOaIt+iHquW3seaPkOS+m+WtmOWCqOepuumXtOeahOesrOS4ieaWueWQjOatpe+8jFRUUyDnprvnur/nvJPlrZjkuI7pooTkuIvovb3vvIzku6Xlj4ogTmVhcmJ5IEJvb2tEcm9wIOeahOWPr+S/oeiuvuWkh+mFjeWvueOAglJlYWRlc3QgQ2xvdWQg5a6Y5pa55LqR5a2Y5YKo44CB5pyN5Yqh5Zmo5L6n57+76K+R6aKd5bqm44CBU2VuZCB0byBSZWFkZXN0IOmCruS7tuetieS+nei1luWumOaWueacjeWKoeWZqOi1hOa6kOeahOWKn+iDveS7jeeEtuaMieeFp+WumOaWueinhOWImeW3peS9nOOAggoKIyMg54mI5pys5LiL6L29CgojIyMgMC4xMi44LWZvcmsuMSDigJQg6Lef6L+b5LiK5ri4IC8g5byA5pS+5pys5Zyw5LiO6Ieq5pyJ6LWE5rqQ5Yqf6IO9Cgpb5LiL6L29IDAuMTIuOC1mb3JrLjFdKGh0dHBzOi8vZ2l0aHViLmNvbS9BbmR5U2NhcmxldDIzMy9yZWFkZXN0L3JlbGVhc2VzL3RhZy92MC4xMi44LWZvcmsuMSkKCui/meaYr+ebruWJjeS4u+imgee7tOaKpOeahOeJiOacrOOAguWug+S7peWumOaWuSAwLjEyLjgg5Li65Z+656GA77yM5L+d55WZ5paw54mI5Yqf6IO95LiO5ZCO57ut5ZCM5q2l5LiK5ri455qE56m66Ze077yM5ZCM5pe25byA5pS+56ys5LiJ5pa55ZCM5q2l44CBVFRTIOemu+e6v+e8k+WtmOWSjCBOZWFyYnkgQm9va0Ryb3Ag6YWN5a+5562J5LiN5L6d6LWW5a6Y5pa55LqR6LWE5rqQ55qE5Yqf6IO944CCCgojIyMgdjAuMTIuNi4yMiDigJQg5a6M5pW05bGA5Z+f572R5Lmm57GN5ZCM5q2l54mIIC8g5pqC5YGc5byA5Y+RCgpb5LiL6L29IHYwLjEyLjYuMjJdKGh0dHBzOi8vZ2l0aHViLmNvbS9BbmR5U2NhcmxldDIzMy9yZWFkZXN0L3JlbGVhc2VzL3RhZy92MC4xMi42LjIyKQoK6L+Z5pivIDAuMTIuNiDns7vliJfmnIDlkI7kuIDkuKrlhazlvIDniYjmnKzvvIzljIXlkKvkuIDlpZflrozmlbTnmoTlsYDln5/nvZHkuabnsY3lkIzmraXmnLrliLbvvIzpgILlkIjluIzmnJvlnKjoh6rlt7HnmoTorr7lpIfkuYvpl7Tnm7TmjqXlkIzmraXkuabnsY3nmoTnlKjmiLfjgILnlLHkuo7ov5nlpZfmnLrliLbmtonlj4rovoPlpJrlupXlsYLlkIzmraXmlLnliqjvvIzmjIHnu63ot5/ov5vkuIrmuLjnmoTnu7TmiqTmiJDmnKzovoPpq5jvvIzmiYDku6Xnm67liY3mmoLlgZznu6fnu63lvIDlj5HvvIzkvYblt7LmnInniYjmnKzkvJrnu6fnu63kv53nlZnjgIIKCiMjIFJlYWRlc3Qg55qE5Li76KaB6IO95YqbCgpSZWFkZXN0IOaUr+aMgSBFUFVC44CBUERG44CBTU9CSeOAgUFaVzPjgIFGQjLjgIFDQlrjgIFUWFTjgIFNYXJrZG93biDnrYnmoLzlvI/vvIzmj5DkvpvliIbpobXkuI7mu5rliqjpmIXor7vjgIHlhajmlofmkJzntKLjgIHmoIfms6jkuI7kuabnrb7jgIHor43lhbjkuI4gV2lraXBlZGlhIOafpeivouOAgeW5tuaOkumYheivu+OAgeWtl+S9k+S4juS4u+mimOiHquWumuS5ieOAgU9QRFMg5LiOIENhbGlicmXjgIHnvZHpobXliarol4/jgIHnv7vor5HjgIFUVFPjgIHmnInlo7DkuabjgIHot6jlubPlj7DlkIzmraXjgIFLT1JlYWRlciDlkIzmraXku6Xlj4rlpJrnp43ml6Dpmpznoo3lip/og73jgIIKCuWujOaVtOeahOWKn+iDveihqOOAgeaIquWbvuOAgeaVhemanOaOkuafpeS4juS4iua4uOmhueebruivtOaYjuivt+afpeeci+m7mOiupOiLseaWhyBSRUFETUXvvJogW1JFQURNRS5tZF0oLi9SRUFETUUubWQp44CCCgojIyDkuIvovb3kuI7kvb/nlKgKCuacrOWIhuaUr+iHquW3seeahOaehOW7uuivt+S8mOWFiOS7juacrOS7k+W6k+eahCBbUmVsZWFzZXNdKGh0dHBzOi8vZ2l0aHViLmNvbS9BbmR5U2NhcmxldDIzMy9yZWFkZXN0L3JlbGVhc2VzKSDkuIvovb3jgILlrpjmlrkgQXBwIFN0b3Jl44CBR29vZ2xlIFBsYXnjgIFGbGF0aHVi44CBUmVhZGVzdCBXZWIg5LiO5a6Y5pa55paH5qGj5LuN55Sx5LiK5ri4IFJlYWRlc3Qg6aG555uu57u05oqk44CCCgpXaW5kb3dzIOWuieijheeJiOS+nei1liBNaWNyb3NvZnQgRWRnZSBXZWJWaWV3MiBSdW50aW1l44CC6Iul5Y+M5Ye75ZCO5rKh5pyJ56qX5Y+j77yM6K+35YWI56Gu6K6k57O757uf5bey57uP5a6J6KOF5bm25pu05pawIFdlYlZpZXcyIFJ1bnRpbWXjgIIKCiMjIOS7jua6kOeggeaehOW7ugoK5p6E5bu65pa55byP5LiO5LiK5ri45Z+65pys5LiA6Ie077yM5Y+v5Y+C6ICD5LuT5bqT5Lit55qEIFtDT05UUklCVVRJTkcubWRdKC4vQ09OVFJJQlVUSU5HLm1kKeOAguS4u+WIhuaUr+eUqOS6jui3n+i/m+aWsOeJiOS4jue7tOaKpOW9k+WJjSBmb3Jr77yMZGV2ZWxvcCDliIbmlK/kv53nlZnovoPml6nnmoTmt7HluqblrprliLbljoblj7LkuI7lrp7pqozlhoXlrrnjgIIKCiMjIOS4iua4uOmhueebrgoK5LiK5ri45LuT5bqT77yaIFtyZWFkZXN0L3JlYWRlc3RdKGh0dHBzOi8vZ2l0aHViLmNvbS9yZWFkZXN0L3JlYWRlc3QpCgrlrpjmlrnnvZHnq5nvvJogW3JlYWRlc3QuY29tXShodHRwczovL3JlYWRlc3QuY29tKQoK5a6Y5pa55paH5qGj77yaIFtyZWFkZXN0LmNvbS9kb2NzXShodHRwczovL3JlYWRlc3QuY29tL2RvY3MpCgojIyDorrjlj6/or4EKClJlYWRlc3Qg5L2/55SoIEdOVSBBZmZlcm8gR2VuZXJhbCBQdWJsaWMgTGljZW5zZSB2My4wIOaIluabtOmrmOeJiOacrOWPkeW4g+OAguWFt+S9k+adoeasvuS4juesrOS4ieaWuee7hOS7tuiuuOWPr+ivgeivt+afpeeciyBbTElDRU5TRV0oLi9MSUNFTlNFKSDku6Xlj4rpu5jorqToi7HmlocgUkVBRE1FIOS4reeahCBMaWNlbnNlIOmDqOWIhuOAggo=
         shell: bash
         run: |
           set -euo pipefail
-          python3 <<'PY'
+          python3 - <<'PY'
+          import base64
+          import os
           from pathlib import Path
-
-          readme_path = Path('README.md')
-          text = readme_path.read_text(encoding='utf-8')
-
+          path = Path('README.md')
+          text = path.read_text(encoding='utf-8')
           switch = '<p align="center">\n  <strong>English</strong> | <a href="./README.zh-CN.md">简体中文</a>\n</p>\n'
           marker = '  <h1>Readest</h1>\n  <br>\n'
           if switch not in text:
               text = text.replace(marker, '  <h1>Readest</h1>\n' + switch + '  <br>\n', 1)
-
           start = text.find('## 本分支版本下载')
           end = text.find('## Features', start)
-          if start == -1 or end == -1:
-              raise SystemExit('Could not locate the existing Chinese fork section in README.md')
-
-          english_fork = '''## Fork Releases
-
-This repository maintains two Readest-based release tracks with different goals. Choose the one that best fits how you want to use the app.
-
-### 0.12.8-fork.1 — Upstream tracking / local premium gates unlocked
-
-[Download 0.12.8-fork.1](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.8-fork.1)
-
-Based on official Readest 0.12.8. This is the primary maintained track: it follows upstream changes while removing Premium restrictions from features that use local resources or storage services supplied by the user, including WebDAV, Google Drive, S3, OneDrive, offline TTS caching, and trusted-device pairing for Nearby BookDrop. Features that consume official Readest server resources, including Readest Cloud storage, server-side translation quota, and Send to Readest by email, continue to follow the upstream rules.
-
-### v0.12.6.22 — Full LAN book sync / development paused
-
-[Download v0.12.6.22](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.6.22)
-
-This is the final public release of the 0.12.6 line. It contains a complete LAN book-sync implementation for users who want direct book transfer and synchronization between their own devices. Because this subsystem requires deeper synchronization changes and is expensive to keep rebasing onto upstream, active development is currently paused. The release remains available for users who still need that workflow.
-
-'''
-          text = text[:start] + english_fork + text[end:]
-          readme_path.write_text(text, encoding='utf-8')
-
-          zh = '''<div align="center">
-  <a href="https://readest.com" target="_blank">
-    <img src="https://github.com/readest/readest/blob/main/apps/readest-app/src-tauri/icons/icon.png?raw=true" alt="Readest Logo" width="20%" />
-  </a>
-  <h1>Readest 社区分支</h1>
-  <p><a href="./README.md">English</a> | <strong>简体中文</strong></p>
-</div>
-
-Readest 是一款开源电子书阅读器，支持 Windows、macOS、Linux、Android、iOS 与 Web。本仓库是 Readest 的社区维护分支，默认 README 使用英文，这个页面提供简体中文说明。
-
-## 关于这个分支
-
-当前主线基于官方 Readest 0.12.8，并尽量保持后续跟进上游的能力。这个分支不会把账号整体伪装成 Premium，而是只解除那些不需要消耗 Readest 官方服务器资源的功能限制。
-
-已经开放的功能包括 WebDAV、Google Drive、S3、OneDrive 等由用户自己提供存储空间的第三方同步，TTS 离线缓存与预下载，以及 Nearby BookDrop 的可信设备配对。Readest Cloud 官方云存储、服务器侧翻译额度、Send to Readest 邮件等依赖官方服务器资源的功能仍然按照官方规则工作。
-
-## 版本下载
-
-### 0.12.8-fork.1 — 跟进上游 / 开放本地与自有资源功能
-
-[下载 0.12.8-fork.1](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.8-fork.1)
-
-这是目前主要维护的版本。它以官方 0.12.8 为基础，保留新版功能与后续同步上游的空间，同时开放第三方同步、TTS 离线缓存和 Nearby BookDrop 配对等不依赖官方云资源的功能。
-
-### v0.12.6.22 — 完整局域网书籍同步版 / 暂停开发
-
-[下载 v0.12.6.22](https://github.com/AndyScarlet233/readest/releases/tag/v0.12.6.22)
-
-这是 0.12.6 系列最后一个公开版本，包含一套完整的局域网书籍同步机制，适合希望在自己的设备之间直接同步书籍的用户。由于这套机制涉及较多底层同步改动，持续跟进上游的维护成本较高，所以目前暂停继续开发，但已有版本会继续保留。
-
-## Readest 的主要能力
-
-Readest 支持 EPUB、PDF、MOBI、AZW3、FB2、CBZ、TXT、Markdown 等格式，提供分页与滚动阅读、全文搜索、标注与书签、词典与 Wikipedia 查询、并排阅读、字体与主题自定义、OPDS 与 Calibre、网页剪藏、翻译、TTS、有声书、跨平台同步、KOReader 同步以及多种无障碍功能。
-
-完整的功能表、截图、故障排查与上游项目说明请查看默认英文 README： [README.md](./README.md)。
-
-## 下载与使用
-
-本分支自己的构建请优先从本仓库的 [Releases](https://github.com/AndyScarlet233/readest/releases) 下载。官方 App Store、Google Play、Flathub、Readest Web 与官方文档仍由上游 Readest 项目维护。
-
-Windows 安装版依赖 Microsoft Edge WebView2 Runtime。若双击后没有窗口，请先确认系统已经安装并更新 WebView2 Runtime。
-
-## 从源码构建
-
-构建方式与上游基本一致，可参考仓库中的 [CONTRIBUTING.md](./CONTRIBUTING.md)。主分支用于跟进新版与维护当前 fork，develop 分支保留较早的深度定制历史与实验内容。
-
-## 上游项目
-
-上游仓库： [readest/readest](https://github.com/readest/readest)
-
-官方网站： [readest.com](https://readest.com)
-
-官方文档： [readest.com/docs](https://readest.com/docs)
-
-## 许可证
-
-Readest 使用 GNU Affero General Public License v3.0 或更高版本发布。具体条款与第三方组件许可证请查看 [LICENSE](./LICENSE) 以及默认英文 README 中的 License 部分。
-'''
-          Path('README.zh-CN.md').write_text(zh, encoding='utf-8')
+          if start < 0 or end < 0:
+              raise SystemExit('Could not locate Chinese fork section')
+          english = base64.b64decode(os.environ['EN_B64']).decode('utf-8')
+          chinese = base64.b64decode(os.environ['ZH_B64']).decode('utf-8')
+          path.write_text(text[:start] + english + text[end:], encoding='utf-8')
+          Path('README.zh-CN.md').write_text(chinese, encoding='utf-8')
           PY
-
           rm .github/workflows/temporary-bilingual-readme.yml
           git diff --check
           git config user.name 'github-actions[bot]'
