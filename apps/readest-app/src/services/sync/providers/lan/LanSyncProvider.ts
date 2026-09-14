@@ -52,9 +52,10 @@ const getLanStreamAuthError = (error: unknown, action: string): FileSyncError | 
 };
 
 /**
- * Native LAN transfers must never fail open into FileSyncEngine's buffered
- * compatibility path. That fallback materialises an entire book in the JS
- * heap/WebView and can make mobile clients unresponsive for large CBZ/PDFs.
+ * Native LAN book transfers must not fail open into the engine's buffered
+ * compatibility path. That path materialises a whole book in the WebView and
+ * is useful for cloud-provider compatibility, but LAN already owns a reliable
+ * disk-to-socket native path and should keep large books out of JS memory.
  */
 export const toLanStreamError = (error: unknown, action: 'upload' | 'download'): FileSyncError => {
   const authError = getLanStreamAuthError(error, action);
@@ -116,10 +117,7 @@ const fileRequest = async (
   return res;
 };
 
-/**
- * Ping the peer — used by the LAN settings form's "test connection" button.
- * Throws {@link FileSyncError} on anything other than a token-accepted 200.
- */
+/** Probe a peer before persisting a connection. */
 export const lanSyncPing = async (
   settings: LanSyncSettings,
 ): Promise<{ name: string; device_id: string; protocol: string }> => {
@@ -136,22 +134,13 @@ export const lanSyncPing = async (
   if (protocol !== LAN_SYNC_PROTOCOL || typeof name !== 'string' || typeof deviceId !== 'string') {
     throw new FileSyncError('LAN peer is not a compatible Readest server', 'UNKNOWN', res.status);
   }
-  return {
-    name,
-    device_id: deviceId,
-    protocol,
-  };
+  return { name, device_id: deviceId, protocol };
 };
 
 export const createLanSyncProvider = (settings: LanSyncSettings): FileSyncProvider => {
   const native = isTauriAppPlatform();
   const provider: FileSyncProvider = {
     rootPath: '/',
-    // Book binaries can be hundreds of MB or several GB. Native LAN must stay
-    // disk-to-socket/disk-to-disk: never fall back to a whole-book ArrayBuffer
-    // in the WebView. One bulky stream at a time also prevents an Android peer
-    // from servicing four large file pipelines while trying to render the UI.
-    ...(native ? { requireBookStreaming: true, maxConcurrentBookTransfers: 1 } : {}),
 
     readText: async (path) => {
       const res = await fileRequest(settings, path, { method: 'GET' });
@@ -208,21 +197,18 @@ export const createLanSyncProvider = (settings: LanSyncSettings): FileSyncProvid
     },
 
     ensureDir: async () => {
-      // The peer creates parent directories on every PUT, and the engine never
-      // lists a directory it has not written — so there is nothing to pre-create.
+      // The peer creates parent directories on every PUT.
     },
 
     deleteDir: async (path) => {
-      // Missing is success per the provider contract; the server also treats it
-      // that way, but tolerate a null (404) response defensively.
       await fileRequest(settings, path, { method: 'DELETE' });
     },
   };
 
-  // Streaming transfers are mandatory for native LAN book binaries. Returning
-  // false here would ask FileSyncEngine to retry through readBinary/writeBinary,
-  // hauling the entire book through the WebView and recreating the large-file
-  // UI freeze this path exists to avoid. Rust streams disk-to-network directly.
+  // Keep LAN binary transfers entirely in the native layer. We deliberately do
+  // not add LAN-only fields to FileSyncProvider: this provider expresses its
+  // requirements through the existing uploadStream/downloadStream seam, so
+  // future upstream engine changes have far fewer merge points.
   if (native) {
     const authHeaders = (): Record<string, string> => buildLanSyncAuthHeaders(settings.token);
     const fileUrl = (path: string): string => `${peerBase(settings)}/files${path}`;
@@ -245,9 +231,8 @@ export const createLanSyncProvider = (settings: LanSyncSettings): FileSyncProvid
           onProgress,
           authHeaders(),
           undefined,
+          true,
           false,
-          false,
-          { resume: true },
         );
         return true;
       } catch (e) {
