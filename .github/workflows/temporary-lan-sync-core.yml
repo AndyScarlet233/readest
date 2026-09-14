@@ -1,0 +1,146 @@
+name: Temporary LAN sync core validation
+
+on:
+  push:
+    branches:
+      - feature/lan-sync-revival
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/lan-sync-revival
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.90'
+          components: rustfmt, clippy
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+      - name: Patch LAN core integration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'marker not found in {path}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          settings = 'apps/readest-app/src/types/settings.ts'
+          lan_interface = '''/**
+           * LAN peer sync settings. The peer is another Readest device on the
+           * same local network. The transport reuses the normal file-sync layout
+           * and engine, so only connection/lifecycle state is LAN-specific.
+           */
+          export interface LanSyncSettings {
+            enabled: boolean;
+            host: string;
+            port: number;
+            token: string;
+            syncProgress?: boolean;
+            syncNotes?: boolean;
+            syncBooks?: boolean;
+            fullSync?: boolean;
+            strategy?: KOSyncStrategy;
+            deviceId?: string;
+            lastSyncedAt?: number;
+            providerSelectedAt?: number;
+          }
+
+          '''
+          replace(settings, '/**\n * Google Drive file-sync settings.', lan_interface + '/**\n * Google Drive file-sync settings.')
+          replace(settings, '  webdav: WebDAVSettings;\n  googleDrive: GoogleDriveSettings;', '  webdav: WebDAVSettings;\n  lan: LanSyncSettings;\n  googleDrive: GoogleDriveSettings;')
+
+          constants = 'apps/readest-app/src/services/constants.ts'
+          replace(constants, '  ICloudSettings,\n} from \'@/types/settings\';', '  ICloudSettings,\n  LanSyncSettings,\n} from \'@/types/settings\';')
+          lan_default = '''export const DEFAULT_LAN_SYNC_SETTINGS = {
+            enabled: false,
+            host: '',
+            port: 53430,
+            token: '',
+            syncProgress: true,
+            syncNotes: true,
+            syncBooks: false,
+            strategy: 'silent',
+            deviceId: '',
+            lastSyncedAt: 0,
+          } as LanSyncSettings;
+
+          '''
+          replace(constants, 'export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {', lan_default + 'export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {')
+          replace(constants, '  webdav: DEFAULT_WEBDAV_SETTINGS,\n  googleDrive:', '  webdav: DEFAULT_WEBDAV_SETTINGS,\n  lan: DEFAULT_LAN_SYNC_SETTINGS,\n  googleDrive:')
+
+          registry = 'apps/readest-app/src/services/sync/file/providerRegistry.ts'
+          replace(registry, "import type { S3Settings, WebDAVSettings } from '@/types/settings';", "import type { LanSyncSettings, S3Settings, WebDAVSettings } from '@/types/settings';")
+          replace(registry, "import { createWebDAVProvider } from '@/services/sync/providers/webdav/WebDAVProvider';", "import { createWebDAVProvider } from '@/services/sync/providers/webdav/WebDAVProvider';\nimport { createLanSyncProvider } from '@/services/sync/providers/lan/LanSyncProvider';")
+          replace(registry, "export type FileSyncBackendKind = 'webdav' | 'gdrive' | 's3' | 'onedrive' | 'icloud';", "export type FileSyncBackendKind = 'webdav' | 'gdrive' | 's3' | 'onedrive' | 'icloud' | 'lan';")
+          replace(registry, '  icloud?: { enabled?: boolean };\n}', '  icloud?: { enabled?: boolean };\n  lan?: LanSyncSettings;\n}')
+          replace(registry, "  if (kind === 'icloud') return 'icloud';\n  return 'gdrive';", "  if (kind === 'icloud') return 'icloud';\n  if (kind === 'lan') {\n    const l = settings.lan;\n    return `lan:${l?.enabled}:${l?.host}:${l?.port}:${l?.token}`;\n  }\n  return 'gdrive';")
+          replace(registry, "          : kind === 'icloud'\n            ? await buildICloudProvider()\n            : await buildGoogleDriveProvider();", "          : kind === 'icloud'\n            ? await buildICloudProvider()\n            : kind === 'lan'\n              ? settings.lan\n                ? createLanSyncProvider(settings.lan)\n                : null\n              : await buildGoogleDriveProvider();")
+
+          cloud = 'apps/readest-app/src/services/sync/cloudSyncProvider.ts'
+          replace(cloud, "): 'webdav' | 'googleDrive' | 's3' | 'onedrive' | 'icloud' =>", "): 'webdav' | 'googleDrive' | 's3' | 'onedrive' | 'icloud' | 'lan' =>")
+          replace(cloud, "          : kind === 'icloud'\n            ? 'iCloud'\n            : 'Readest Cloud';", "          : kind === 'icloud'\n            ? 'iCloud'\n            : kind === 'lan'\n              ? 'LAN Sync'\n              : 'Readest Cloud';")
+          replace(cloud, "  if (settings?.icloud?.enabled) enabled.push('icloud');\n  return enabled;", "  if (settings?.icloud?.enabled) enabled.push('icloud');\n  if (settings?.lan?.enabled) enabled.push('lan');\n  return enabled;")
+          replace(cloud, "      case 'icloud':\n        if (settings.icloud && !settings.icloud.syncBooks) {\n          settings.icloud = { ...settings.icloud, syncBooks: true };\n          changed = true;\n        }\n        break;", "      case 'icloud':\n        if (settings.icloud && !settings.icloud.syncBooks) {\n          settings.icloud = { ...settings.icloud, syncBooks: true };\n          changed = true;\n        }\n        break;\n      case 'lan':\n        if (settings.lan && !settings.lan.syncBooks) {\n          settings.lan = { ...settings.lan, syncBooks: true };\n          changed = true;\n        }\n        break;")
+
+          runner = 'apps/readest-app/src/services/sync/file/runLibrarySync.ts'
+          replace(runner, '    concurrency: 6,\n    deviceId,', "    concurrency: kind === 'lan' ? 1 : 6,\n    deviceId,")
+
+          cargo = 'apps/readest-app/src-tauri/Cargo.toml'
+          replace(cargo, 'tokio = { version = "1", features = ["fs"] }', 'tokio = { version = "1", features = ["fs", "io-util", "net", "sync", "time"] }')
+          replace(cargo, 'tokio-util = { version = "0.7", features = ["codec", "rt"] }', 'tokio-util = { version = "0.7", features = ["codec", "io", "rt"] }\naxum = "0.8"\nmdns-sd = "0.13"')
+
+          lib = 'apps/readest-app/src-tauri/src/lib.rs'
+          replace(lib, 'mod epub_parser;\nmod localsend;', 'mod epub_parser;\nmod lan_sync;\nmod localsend;')
+          replace(lib, '            localsend::commands::localsend_cancel_send,\n            #[cfg(desktop)]', '            localsend::commands::localsend_cancel_send,\n            lan_sync::lan_sync_start,\n            lan_sync::lan_sync_replace,\n            lan_sync::lan_sync_discover,\n            lan_sync::lan_sync_stop,\n            lan_sync::lan_sync_status,\n            #[cfg(desktop)]')
+          replace(lib, '            app.manage(localsend::LocalSendState::default());', '            app.manage(localsend::LocalSendState::default());\n            app.manage(lan_sync::LanSyncState::default());')
+
+          server = 'apps/readest-app/src-tauri/src/lan_sync/server.rs'
+          replace(server, '''    #[cfg(windows)]
+              {
+                  crate::transfer_file::replace_file_atomically(part_path, file_path)
+              }
+          ''', '''    #[cfg(windows)]
+              {
+                  match tokio::fs::remove_file(file_path).await {
+                      Ok(()) => {}
+                      Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                      Err(e) => return Err(e),
+                  }
+                  tokio::fs::rename(part_path, file_path).await
+              }
+          ''')
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Frontend lint and typecheck
+        run: pnpm --dir apps/readest-app lint
+      - name: Rust format
+        run: cargo fmt -p Readest --check
+      - name: Rust clippy
+        run: cargo clippy -p Readest --no-deps -- -D warnings
+      - name: Rust tests
+        run: cargo test -p Readest --lib
+      - name: Commit validated core
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/readest-app/src apps/readest-app/src-tauri Cargo.lock
+          git commit -m "feat(lan-sync): integrate isolated LAN backend"
+          git push --no-verify origin HEAD:feature/lan-sync-revival
