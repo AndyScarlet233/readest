@@ -16,8 +16,6 @@ use tokio::{
 };
 use tokio_util::codec::{BytesCodec, FramedRead};
 
-use read_progress_stream::ReadProgressStream;
-
 use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
@@ -399,20 +397,18 @@ pub async fn upload_file<R: tauri::Runtime>(
 }
 
 fn file_to_body(channel: Channel<ProgressPayload>, file: File, file_len: u64) -> reqwest::Body {
-    let stream = FramedRead::new(file, BytesCodec::new()).map_ok(|r| r.freeze());
-
     let mut stats = TransferStats::default();
-    reqwest::Body::wrap_stream(ReadProgressStream::new(
-        stream,
-        Box::new(move |progress_chunk, _progress_total| {
-            stats.record_chunk_transfer(progress_chunk as usize);
-            let _ = channel.send(ProgressPayload {
-                progress: stats.total_transferred,
-                total: file_len,
-                transfer_speed: stats.transfer_speed,
-            });
-        }),
-    ))
+    let stream = FramedRead::new(file, BytesCodec::new()).map_ok(move |chunk| {
+        let bytes = chunk.freeze();
+        stats.record_chunk_transfer(bytes.len());
+        let _ = channel.send(ProgressPayload {
+            progress: stats.total_transferred,
+            total: file_len,
+            transfer_speed: stats.transfer_speed,
+        });
+        bytes
+    });
+    reqwest::Body::wrap_stream(stream)
 }
 
 #[cfg(test)]
