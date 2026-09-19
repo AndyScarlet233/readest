@@ -19,6 +19,7 @@ import {
   RiMicrosoftLine,
   RiAppleLine,
   RiHeadphoneLine,
+  RiRouterLine,
 } from 'react-icons/ri';
 import { useEnv } from '@/context/EnvContext';
 import { useAuth } from '@/context/AuthContext';
@@ -54,6 +55,8 @@ import OneDriveForm from './integrations/OneDriveForm';
 import ICloudForm from './integrations/ICloudForm';
 import S3Form from './integrations/S3Form';
 import { persistCloudProviderEnabled } from './integrations/cloudSync';
+import { stopLanSync } from '@/services/lanSync/lifecycle';
+import LanForm from './integrations/LanForm';
 import {
   canToggleCloudProvider,
   getReadestCloudRowStatus,
@@ -80,6 +83,7 @@ type SubPage =
   | 's3'
   | 'onedrive'
   | 'icloud'
+  | 'lan'
   | 'readest-cloud'
   | 'readwise'
   | 'hardcover'
@@ -128,6 +132,8 @@ const IntegrationsPanel: React.FC = () => {
   const onedriveLastError = useFileSyncStore((s) => s.lastErrorByKind.onedrive);
   const isICloudSyncing = useFileSyncStore((s) => s.byKind.icloud?.isSyncing ?? false);
   const icloudLastError = useFileSyncStore((s) => s.lastErrorByKind.icloud);
+  const isLanSyncing = useFileSyncStore((s) => s.byKind.lan?.isSyncing ?? false);
+  const lanLastError = useFileSyncStore((s) => s.lastErrorByKind.lan);
   // "Configured" for iCloud = the container is reachable (an entitled build
   // with an iCloud session). Probed once; Apple Tauri platforms only.
   const [icloudAvailable, setICloudAvailable] = useState(false);
@@ -218,6 +224,7 @@ const IntegrationsPanel: React.FC = () => {
       requestedSubPage === 's3' ||
       requestedSubPage === 'onedrive' ||
       requestedSubPage === 'icloud' ||
+      requestedSubPage === 'lan' ||
       requestedSubPage === 'readwise' ||
       requestedSubPage === 'hardcover' ||
       requestedSubPage === 'notion' ||
