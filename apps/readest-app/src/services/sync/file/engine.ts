@@ -760,6 +760,11 @@ export class FileSyncEngine {
     }
 
     const remoteBooksToAdd: Book[] = [];
+    // Covers written earlier in THIS sync run. The Full-Sync audit pass must
+    // not re-GET a cover the metadata pass just wrote (the store may not
+    // reflect the write back into the row snapshot the audit reads), while
+    // older rows claiming a cover whose file went missing still get repaired.
+    const coversWritten = new Set<string>();
 
     // Metadata reconciliation for books present BOTH locally and in the shared
     // library.json (#4756). Last-writer-wins on `book.updatedAt`: when a peer's
@@ -806,7 +811,10 @@ export class FileSyncEngine {
           if (bytesMayHaveMoved || needsCoverPull) {
             try {
               const coverBytes = await this.pullBookCover(rb.hash);
-              if (coverBytes) await this.store.saveBookCover(merged, coverBytes);
+              if (coverBytes) {
+                await this.store.saveBookCover(merged, coverBytes);
+                coversWritten.add(rb.hash);
+              }
             } catch (e) {
               noteAbort(e);
               console.warn('file sync: metadata cover pull failed', rb.hash, e);
@@ -908,7 +916,7 @@ export class FileSyncEngine {
         async (rb) => {
           const local = allBooksMap.get(rb.hash)!;
           try {
-            if (await this.store.loadBookCover(local)) return;
+            if (coversWritten.has(rb.hash) || (await this.store.loadBookCover(local))) return;
             const coverBytes = await this.pullBookCover(rb.hash);
             if (!coverBytes) return;
             const repaired: Book = { ...local, coverDownloadedAt: Date.now() };
