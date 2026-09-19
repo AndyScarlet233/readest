@@ -2296,5 +2296,7 @@
   "Nearby Readest devices": "附近的 Readest 设备",
   "Connecting…": "连接中…",
   "No nearby Readest devices found": "未找到附近的 Readest 设备",
-  "You can still connect manually below.": "你仍可在下方手动连接。"
+  "You can still connect manually below.": "你仍可在下方手动连接。",
+  "Sync with LAN": "与局域网同步",
+  "Connect to a Readest peer on your local network to sync books and progress.": "连接到局域网中的 Readest 对端，同步书籍和阅读进度。"
 }

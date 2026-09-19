@@ -427,6 +427,20 @@ const IntegrationsPanel: React.FC = () => {
         )}
       </div>
     );
+  if (subPage === 'lan')
+    return (
+      <div className='my-4 w-full'>
+        <SubPageHeader
+          parentLabel={_('Integrations')}
+          currentLabel={_('LAN peer')}
+          description={_(
+            'Connect to a Readest peer on your local network to sync books and progress.',
+          )}
+          onBack={() => setSubPage(null)}
+        />
+        <LanForm />
+      </div>
+    );
   if (subPage === 'readest-cloud')
     return (
       <div className='my-4 w-full'>
@@ -598,6 +612,13 @@ const IntegrationsPanel: React.FC = () => {
   const localSendStatus = !isLocalSendEnabled()
     ? _('Off')
     : localSendAlias || getLocalSendAlias() || _('On');
+  const lanStatus = !settings.lan?.enabled
+    ? _('Off')
+    : isLanSyncing
+      ? _('Connected')
+      : lanLastError
+        ? lanLastError
+        : _('Not connected');
 
   return (
     <div className='my-4 w-full space-y-6'>
@@ -762,6 +783,22 @@ const IntegrationsPanel: React.FC = () => {
                 toggleLabel={_('Sync with iCloud')}
               />
             )}
+            {/* LAN is a local, account-free backend: no premium badge or
+                plan gate, and the checkbox is available wherever the Tauri
+                server can run. Turning it off also stops the peer server. */}
+            <CloudProviderRow
+              icon={RiRouterLine}
+              title={_('LAN peer')}
+              status={lanStatus}
+              checked={!!settings.lan?.enabled}
+              canToggle={isTauriAppPlatform()}
+              onToggle={async (next) => {
+                await toggleCloudProvider('lan', next);
+                if (!next) await stopLanSync();
+              }}
+              onOpen={() => setSubPage('lan')}
+              toggleLabel={_('Sync with LAN')}
+            />
           </div>
         </div>
         {providers.length === 0 && (
