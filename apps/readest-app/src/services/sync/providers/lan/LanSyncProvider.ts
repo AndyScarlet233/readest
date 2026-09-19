@@ -215,7 +215,13 @@ export const createLanSyncProvider = (settings: LanSyncSettings): FileSyncProvid
 
     provider.uploadStream = async (remotePath, localPath) => {
       try {
-        await tauriUpload(fileUrl(remotePath), localPath, 'PUT', undefined, authHeaders());
+        await tauriUpload(
+          fileUrl(remotePath),
+          localPath,
+          'PUT',
+          undefined,
+          new Map(Object.entries(authHeaders())),
+        );
         return true;
       } catch (e) {
         console.warn('LanSyncProvider.uploadStream failed', remotePath, e);
