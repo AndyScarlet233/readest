@@ -384,6 +384,7 @@ export class FileSyncEngine {
     // bytes straight from disk. The metadata fetch never reads the body, so
     // heap stays flat even for gigabyte-scale PDFs.
     if (this.provider.uploadStream) {
+      const uploadStream = this.provider.uploadStream;
       const src = await this.store.resolveLocalBookPath(book);
       if (src) {
         const remoteHead = await probeRemoteHead();
@@ -391,12 +392,27 @@ export class FileSyncEngine {
           return { uploaded: false, reason: 'remote-matches' };
         }
         await this.ensureDirs(dirs);
-        let ok = await this.provider.uploadStream(path, src.path);
+        // Providers either return false or throw a FileSyncError carrying the
+        // real failure; normalize both to `ok` so the retry below applies to
+        // either contract.
+        let ok: boolean;
+        try {
+          ok = await uploadStream(path, src.path);
+        } catch {
+          ok = false;
+        }
         if (!ok) {
           // Mirror the buffered path's one-shot retry: a parent may have been
-          // recreated mid-PUT (409). Re-ensure directories and try once more.
+          // recreated mid-PUT (409). Re-ensure directories and try once more,
+          // rethrowing the provider's real error when the retry fails too.
           await this.ensureDirs(dirs);
-          ok = await this.provider.uploadStream(path, src.path);
+          try {
+            ok = await uploadStream(path, src.path);
+          } catch (e) {
+            throw e instanceof FileSyncError
+              ? e
+              : new FileSyncError('Streaming upload failed', 'NETWORK');
+          }
           if (!ok) throw new FileSyncError('Streaming upload failed', 'NETWORK');
         }
         return { uploaded: true };

@@ -30,6 +30,17 @@ fn should_buffer_upload(file_len: u64) -> bool {
     file_len <= BUFFERED_UPLOAD_MAX_BYTES
 }
 
+/// Sibling temp target for a download, so the final `rename` stays atomic on
+/// the same volume and a failed transfer never leaves a truncated file at
+/// the destination path.
+fn temp_sibling(file_path: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{file_path}.part-{nanos}")
+}
+
 // The TransferStats struct tracks both transfer speed and cumulative transfer progress.
 pub struct TransferStats {
     accumulated_chunk_len: usize, // Total length of chunks transferred in the current period
@@ -215,20 +226,33 @@ pub async fn download_file<R: tauri::Runtime>(
         }
 
         let total = response.content_length().unwrap_or(0);
-        let mut file = BufWriter::new(File::create(file_path).await?);
-        let mut stream = response.bytes_stream();
+        // Stream into a sibling temp file and rename into place, so a failed
+        // transfer can never leave a truncated book at the final path (the
+        // upload side got the same treatment via whole-file buffering).
+        let tmp_path = temp_sibling(file_path);
+        let written = async {
+            let mut file = BufWriter::new(File::create(&tmp_path).await?);
+            let mut stream = response.bytes_stream();
 
-        let mut stats = TransferStats::default();
-        while let Some(chunk) = stream.try_next().await? {
-            file.write_all(&chunk).await?;
-            stats.record_chunk_transfer(chunk.len());
-            let _ = on_progress.send(ProgressPayload {
-                progress: stats.total_transferred,
-                total,
-                transfer_speed: stats.transfer_speed,
-            });
+            let mut stats = TransferStats::default();
+            while let Some(chunk) = stream.try_next().await? {
+                file.write_all(&chunk).await?;
+                stats.record_chunk_transfer(chunk.len());
+                let _ = on_progress.send(ProgressPayload {
+                    progress: stats.total_transferred,
+                    total,
+                    transfer_speed: stats.transfer_speed,
+                });
+            }
+            file.flush().await?;
+            Ok::<(), Error>(())
         }
-        file.flush().await?;
+        .await;
+        if let Err(e) = written {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err(e);
+        }
+        tokio::fs::rename(&tmp_path, file_path).await?;
 
         Ok(resp_headers)
     }
@@ -270,16 +294,19 @@ pub async fn download_file<R: tauri::Runtime>(
             .await;
     }
 
-    // Multi-part download with range access
+    // Multi-part download with range access. Parts land in a sibling temp
+    // file which is renamed into place only when every range succeeded —
+    // a single failed part must not leave a sparse file at the final path.
     let part_count = total.div_ceil(PART_SIZE);
-    let file = File::create(file_path).await?;
+    let tmp_path = temp_sibling(file_path);
+    let file = File::create(&tmp_path).await?;
     file.set_len(total).await?;
 
     let file = Arc::new(tokio::sync::Mutex::new(file));
     let progress = Arc::new(tokio::sync::Mutex::new(TransferStats::default()));
 
-    stream::iter(0..part_count)
-        .for_each_concurrent(8, |i| {
+    let results: Vec<Result<()>> = stream::iter(0..part_count)
+        .map(|i| {
             let client = client.clone();
             let file = Arc::clone(&file);
             let progress = Arc::clone(&progress);
@@ -297,26 +324,22 @@ pub async fn download_file<R: tauri::Runtime>(
                     req = req.header(key, value);
                 }
 
-                let resp = match req.send().await {
-                    Ok(r) => r,
-                    Err(_) => return,
-                };
-
+                let resp = req.send().await?;
                 if !resp.status().is_success()
                     && resp.status() != reqwest::StatusCode::PARTIAL_CONTENT
                 {
-                    return;
+                    return Err(Error::HttpErrorCode(
+                        resp.status().as_u16(),
+                        resp.text().await.unwrap_or_default(),
+                    ));
                 }
 
-                let bytes = match resp.bytes().await {
-                    Ok(b) => b,
-                    Err(_) => return,
-                };
+                let bytes = resp.bytes().await?;
 
                 {
                     let mut f = file.lock().await;
-                    f.seek(std::io::SeekFrom::Start(start)).await.unwrap();
-                    f.write_all(&bytes).await.unwrap();
+                    f.seek(std::io::SeekFrom::Start(start)).await?;
+                    f.write_all(&bytes).await?;
                 }
 
                 {
@@ -328,9 +351,19 @@ pub async fn download_file<R: tauri::Runtime>(
                         transfer_speed: stat.transfer_speed,
                     });
                 }
+                Ok(())
             }
         })
+        .buffer_unordered(8)
+        .collect()
         .await;
+
+    drop(file);
+    if let Some(Err(e)) = results.into_iter().find(|r| r.is_err()) {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return Err(e);
+    }
+    tokio::fs::rename(&tmp_path, file_path).await?;
 
     Ok(resp_headers)
 }
@@ -480,6 +513,13 @@ mod tests {
         assert!(should_buffer_upload(742 * 1024));
         assert!(should_buffer_upload(BUFFERED_UPLOAD_MAX_BYTES));
         assert!(!should_buffer_upload(BUFFERED_UPLOAD_MAX_BYTES + 1));
+    }
+
+    #[test]
+    fn temp_sibling_is_a_same_volume_dot_part_path() {
+        let tmp = temp_sibling("/data/Readest/Books/x.epub");
+        assert!(tmp.starts_with("/data/Readest/Books/x.epub.part-"));
+        assert_ne!(tmp, temp_sibling("/data/Readest/Books/x.epub"));
     }
 
     #[test]

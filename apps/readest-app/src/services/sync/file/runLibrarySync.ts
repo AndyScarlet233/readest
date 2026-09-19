@@ -199,9 +199,19 @@ export const runFileLibrarySyncPass = async (
  * backend. Succeeds when at least one backend took the book. Toasts are the
  * caller's job.
  */
-export const runFileBookUpload = async (envConfig: EnvConfigType, book: Book): Promise<boolean> => {
+export interface FileBookResult {
+  ok: boolean;
+  /** Underlying error from the last failed backend, for surfacing in UI toasts. */
+  reason?: string;
+}
+
+export const runFileBookUpload = async (
+  envConfig: EnvConfigType,
+  book: Book,
+): Promise<FileBookResult> => {
   const backends = getActiveFileSyncBackends(useSettingsStore.getState().settings);
   let anyUploaded = false;
+  let reason: string | undefined;
   for (const kind of backends) {
     try {
       const engine = await buildEngine(envConfig, kind);
@@ -216,9 +226,10 @@ export const runFileBookUpload = async (envConfig: EnvConfigType, book: Book): P
       }
     } catch (e) {
       console.warn('[cloudSync] book upload failed', kind, book.hash, e);
+      reason = e instanceof Error ? e.message : String(e);
     }
   }
-  return anyUploaded;
+  return { ok: anyUploaded, reason: anyUploaded ? undefined : reason };
 };
 
 /**
@@ -232,8 +243,9 @@ export const runFileBookDownload = async (
   envConfig: EnvConfigType,
   book: Book,
   onProgress?: ProgressHandler,
-): Promise<boolean> => {
+): Promise<FileBookResult> => {
   const backends = getActiveFileSyncBackends(useSettingsStore.getState().settings);
+  let reason: string | undefined;
   for (const kind of backends) {
     try {
       const engine = await buildEngine(envConfig, kind);
@@ -241,10 +253,11 @@ export const runFileBookDownload = async (
       if (!(await engine.downloadBookFile(book, onProgress))) continue;
       book.downloadedAt = Date.now();
       if (!book.coverDownloadedAt) book.coverDownloadedAt = Date.now();
-      return true;
+      return { ok: true };
     } catch (e) {
       console.warn('[cloudSync] book download failed', kind, book.hash, e);
+      reason = e instanceof Error ? e.message : String(e);
     }
   }
-  return false;
+  return { ok: false, reason };
 };

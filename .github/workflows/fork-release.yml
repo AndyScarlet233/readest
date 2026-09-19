@@ -1,0 +1,311 @@
+name: Fork Release (Windows + Android)
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fork-release.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Prepare fork release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./apps/readest-app/package.json').version")
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+          else
+            tag="v${version}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Building Readest $version for $tag"
+
+      - name: Verify target release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+
+      - name: Stop generic full-platform release runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --status in_progress \
+            --json databaseId --jq '.[].databaseId' | while read -r run_id; do
+              [ -z "$run_id" ] && continue
+              echo "Cancelling generic Release Readest run $run_id"
+              gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+            done
+
+  windows:
+    name: Windows x64 NSIS installer
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: setup node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          key: fork-release-windows-x86_64-cargo
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: setup bundled vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: create .env.local
+        shell: bash
+        run: |
+          cat > .env.local <<EOF
+          NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
+          NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}
+          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_PLATFORM=tauri
+          SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG=readest
+          SENTRY_PROJECT=readest
+          EOF
+          cp .env.local apps/readest-app/.env.local
+
+      - name: build Windows x64 installer
+        shell: bash
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+        run: |
+          set -euo pipefail
+          cd apps/readest-app
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.bundle.createUpdaterArtifacts = false;
+          config.plugins.updater.endpoints = [
+            'https://github.com/AndyScarlet233/readest/releases/latest/download/latest.json',
+          ];
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
+          pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: upload Windows installer to Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          src=$(find target/x86_64-pc-windows-msvc/release/bundle/nsis -maxdepth 1 -type f -name '*.exe' -print -quit)
+          test -n "$src"
+          out="Readest_${VERSION}_windows_x64-setup.exe"
+          cp "$src" "$out"
+          gh release upload "$TAG" "$out" --clobber --repo "$GITHUB_REPOSITORY"
+          ls -lh "$out"
+
+  android:
+    name: Android arm64 APK
+    if: github.event_name != 'push'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: setup node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: setup Java 17
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: setup Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          # The legacy `tools` package (part of the action's default) no longer
+          # exists in the SDK repository and makes sdkmanager fail.
+          packages: 'platform-tools'
+
+      - name: install NDK
+        run: sdkmanager "ndk;28.2.13676358"
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: setup bundled vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          key: fork-release-android-arm64-cargo
+
+      - name: create .env.local
+        run: |
+          cat > .env.local <<EOF
+          NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
+          NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}
+          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_PLATFORM=tauri
+          SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG=readest
+          SENTRY_PROJECT=readest
+          EOF
+          cp .env.local apps/readest-app/.env.local
+
+      - name: regenerate Android project and restore tracked customizations
+        run: |
+          cd apps/readest-app
+          rm -rf src-tauri/gen/android
+          pnpm tauri android init
+          pnpm tauri icon ../../data/icons/readest-book.png
+          git checkout .
+
+      - name: inject Android versionCode
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/readest-app
+          node <<'NODE'
+          const fs = require('fs');
+          const version = require('./package.json').version;
+          const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-fork\.(\d+))?/);
+          if (!match) {
+            throw new Error(`Cannot parse app version: ${version}`);
+          }
+          const versionCode =
+            Number(match[1]) * 1000000 +
+            Number(match[2]) * 1000 +
+            Number(match[3]) * 10 +
+            Number(match[4] || 0);
+          const path = 'src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.bundle.android.versionCode = versionCode;
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          console.log(`Injected Android versionCode=${versionCode} for version ${version}`);
+          NODE
+
+      - name: configure stable Android signing key
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEY_BASE64"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          base64 -d <<< "$ANDROID_KEY_BASE64" > "$RUNNER_TEMP/keystore.jks"
+          cat > apps/readest-app/src-tauri/gen/android/keystore.properties <<EOF
+          keyAlias=$ANDROID_KEY_ALIAS
+          password=$ANDROID_KEY_PASSWORD
+          storeFile=$RUNNER_TEMP/keystore.jks
+          EOF
+
+      - name: build Android arm64 APK
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          NODE_OPTIONS: '--max-old-space-size=8192'
+        run: |
+          set -euo pipefail
+          cd apps/readest-app
+          pnpm tauri android build -t aarch64
+
+      - name: upload Android APK to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=$(find apps/readest-app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*release.apk' -print -quit)
+          test -n "$src"
+          out="Readest_${VERSION}_android_arm64.apk"
+          cp "$src" "$out"
+          gh release upload "$TAG" "$out" --clobber --repo "$GITHUB_REPOSITORY"
+          ls -lh "$out"
+
+  cleanup:
+    name: Keep only install packages
+    if: always() && needs.prepare.result == 'success' && needs.windows.result == 'success' && (needs.android.result == 'success' || needs.android.result == 'skipped')
+    needs: [prepare, windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove non-install assets from Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          keep_windows="Readest_${VERSION}_windows_x64-setup.exe"
+          keep_android="Readest_${VERSION}_android_arm64.apk"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while read -r asset; do
+            [ "$asset" = "$keep_windows" ] && continue
+            [ "$asset" = "$keep_android" ] && continue
+            echo "Removing extra release asset: $asset"
+            gh release delete-asset "$TAG" "$asset" --yes --repo "$GITHUB_REPOSITORY"
+          done
+          echo "Release now keeps only:"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | [.name, .size] | @tsv'

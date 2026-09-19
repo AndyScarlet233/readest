@@ -22,14 +22,14 @@ const routing = vi.hoisted(() => ({
   backends: [] as ('webdav' | 'gdrive' | 's3' | 'onedrive')[],
 }));
 
-const runFileBookUpload = vi.hoisted(() => vi.fn(async () => true));
+const runFileBookUpload = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const runFileBookDownload = vi.hoisted(() =>
   vi.fn(
     async (
       _envConfig: EnvConfigType,
       _book: Book,
       _onProgress?: ProgressHandler,
-    ): Promise<boolean> => true,
+    ): Promise<{ ok: boolean; reason?: string }> => ({ ok: true }),
   ),
 );
 const queueUpload = vi.hoisted(() => vi.fn(() => 'transfer-1'));
@@ -153,7 +153,7 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
   it('falls back to Readest Cloud when no enabled file mirror holds the book', async () => {
     routing.readestEnabled = true;
     routing.backends = ['webdav'];
-    runFileBookDownload.mockResolvedValueOnce(false);
+    runFileBookDownload.mockResolvedValueOnce({ ok: false });
 
     const { result } = setup();
     const book = makeBook({ uploadedAt: 12345 });
@@ -167,7 +167,7 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
   it('falls back to an immediate Readest Cloud download when opening a cloud-shelf book', async () => {
     routing.readestEnabled = true;
     routing.backends = ['webdav'];
-    runFileBookDownload.mockResolvedValueOnce(false);
+    runFileBookDownload.mockResolvedValueOnce({ ok: false });
     const downloadBook = vi.fn(async () => {});
 
     const { result, updateBook } = setup({ downloadBook } as unknown as AppService);
@@ -197,10 +197,10 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
 
   it('shows indeterminate progress while a file-backend download runs and clears it on completion', async () => {
     routing.backends = ['gdrive'];
-    let release!: (ok: boolean) => void;
+    let release!: (result: { ok: boolean; reason?: string }) => void;
     runFileBookDownload.mockImplementationOnce(
       () =>
-        new Promise<boolean>((res) => {
+        new Promise<{ ok: boolean; reason?: string }>((res) => {
           release = res;
         }),
     );
@@ -213,7 +213,7 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
     // starts indeterminate until progress events arrive.
     expect(getProgress()).toEqual({ [book.hash]: INDETERMINATE_PROGRESS });
 
-    release(true);
+    release({ ok: true });
     await promise;
     expect(getProgress()).toEqual({});
   });
@@ -268,7 +268,7 @@ describe('useBookTransferActions download routing (issue #5062)', () => {
       let late!: ProgressHandler;
       runFileBookDownload.mockImplementationOnce(async (_env, _book, onProgress) => {
         late = onProgress!;
-        return true;
+        return { ok: true };
       });
 
       const { result, getProgress } = setup();

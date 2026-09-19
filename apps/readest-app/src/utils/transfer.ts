@@ -130,10 +130,12 @@ export const webDownload = async (
     headers: headers ? headers : undefined,
   });
   if (!response.ok) {
+    // Keep the sentinel prefix (callers match on it) and append the status so
+    // the toast carries which HTTP failure actually happened.
     if (response.status === 401 || response.status === 403) {
-      throw new Error(UploadFileError.Unauthorized);
+      throw new Error(`${UploadFileError.Unauthorized} (HTTP ${response.status})`);
     }
-    throw new Error(UploadFileError.DownloadFailed);
+    throw new Error(`${UploadFileError.DownloadFailed} (HTTP ${response.status})`);
   }
 
   const responseHeaders = Object.fromEntries(response.headers.entries());

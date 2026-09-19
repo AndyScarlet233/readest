@@ -95,7 +95,9 @@ export const useBookTransferActions = (
 
       // An explicit Upload must reach EVERY destination the user selected
       // (#5062), not just the first one.
-      const pushed = backends.length > 0 ? await runFileBookUpload(envConfig, book) : false;
+      const uploadResult =
+        backends.length > 0 ? await runFileBookUpload(envConfig, book) : undefined;
+      const pushed = uploadResult?.ok ?? false;
       // Readest Cloud uploads go through the transfer queue (resumable, with its
       // own progress panel), so it reports "queued", not "uploaded".
       const queued = readest ? !!transferManager.queueUpload(book, 1) : false;
@@ -122,7 +124,8 @@ export const useBookTransferActions = (
         timeout: 5000,
         message:
           backends.length > 0 || readest
-            ? _('Failed to upload book: {{title}}', { title: book.title })
+            ? _('Failed to upload book: {{title}}', { title: book.title }) +
+              (uploadResult?.reason ? ` (${uploadResult.reason})` : '')
             : _('Turn on a provider in Cloud Sync settings to upload this book'),
       });
       return false;
@@ -145,8 +148,11 @@ export const useBookTransferActions = (
       if (backends.length > 0) {
         const tracker = trackProgress(book.hash);
         let ok = false;
+        let fileSyncReason: string | undefined;
         try {
-          ok = await runFileBookDownload(envConfig, book, tracker.onProgress);
+          const fileSync = await runFileBookDownload(envConfig, book, tracker.onProgress);
+          ok = fileSync.ok;
+          fileSyncReason = fileSync.reason;
         } finally {
           tracker.done();
         }
@@ -167,7 +173,9 @@ export const useBookTransferActions = (
             eventDispatcher.dispatch('toast', {
               type: 'error',
               timeout: 2000,
-              message: _('Failed to download book: {{title}}', { title: book.title }),
+              message:
+                _('Failed to download book: {{title}}', { title: book.title }) +
+                (fileSyncReason ? ` (${fileSyncReason})` : ''),
             });
           }
           return false;
@@ -190,13 +198,15 @@ export const useBookTransferActions = (
             });
           }
           return true;
-        } catch {
+        } catch (e) {
           tracker.done();
+          const reason = e instanceof Error ? e.message : String(e);
           if (!silent) {
             eventDispatcher.dispatch('toast', {
-              message: _('Failed to download book: {{title}}', {
-                title: book.title,
-              }),
+              message:
+                _('Failed to download book: {{title}}', {
+                  title: book.title,
+                }) + ` (${reason})`,
               type: 'error',
             });
           }
