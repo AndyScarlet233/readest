@@ -447,7 +447,7 @@ fn file_to_body(channel: Channel<ProgressPayload>, file: File, file_len: u64) ->
 #[cfg(test)]
 mod tests {
     use super::{
-        has_disallowed_components, is_within_app_storage, should_buffer_upload,
+        has_disallowed_components, is_within_app_storage, should_buffer_upload, temp_sibling,
         BUFFERED_UPLOAD_MAX_BYTES,
     };
 
