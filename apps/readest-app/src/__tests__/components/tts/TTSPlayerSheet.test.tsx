@@ -446,28 +446,32 @@ describe('TTSPlayerSheet', () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  test('offline audio row: a free user sees a Premium badge and is routed to upgrade', () => {
+  test('offline audio row: the fork unlock opens offline chapters on every plan', () => {
     mockQuota.userProfilePlan = 'free';
     const props = makeProps({ downloads: makeDownloads() });
     render(<TTSPlayerSheet {...props} />);
-    expect(screen.getByText('Premium')).toBeTruthy();
+    // TTS_CACHE_REQUIRES_PREMIUM is false in the fork, so a signed-in free
+    // user is not badged and opens the chapters view directly.
+    expect(screen.queryByText('Premium')).toBeNull();
     expect(screen.getByText('Download chapters for offline playback')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Offline Audio'));
-    expect(routerPush).toHaveBeenCalledWith('/user');
-    expect(props.onClose).toHaveBeenCalled();
-    // The premium chapters view must not open for a free user.
-    expect(screen.queryByText('chapters-view')).toBeNull();
+    expect(screen.getByText('chapters-view')).toBeTruthy();
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(props.onClose).not.toHaveBeenCalled();
   });
 
-  test('offline audio row: a signed-out user is routed to sign-in', () => {
+  test('offline audio row: the fork unlock opens offline chapters even signed out', () => {
     mockAuth.user = null;
     mockQuota.userProfilePlan = undefined;
     const props = makeProps({ downloads: makeDownloads() });
     render(<TTSPlayerSheet {...props} />);
+    // The badge still labels the feature for signed-out visitors, but the
+    // unlock opens the chapters view instead of routing to sign-in.
     expect(screen.getByText('Premium')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Offline Audio'));
-    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining('/auth?redirect='));
-    expect(screen.queryByText('chapters-view')).toBeNull();
+    expect(screen.getByText('chapters-view')).toBeTruthy();
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(props.onClose).not.toHaveBeenCalled();
   });
 
   // Books with recorded narration (EPUB 3 Media Overlays) surface the narrator
