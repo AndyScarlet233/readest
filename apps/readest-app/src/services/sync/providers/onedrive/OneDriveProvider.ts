@@ -244,8 +244,9 @@ class OneDriveProviderImpl {
    * requires an explicit `Content-Range` naming the total size, so the local
    * file size is read via the Tauri fs plugin before the PUT.
    *
-   * Returns `true` on success, `false` on a swallowed failure (matching the
-   * provider contract: the engine retries once, then falls back to buffered).
+   * Returns `true` on success; throws a `FileSyncError` carrying the real
+   * failure (quota, auth, session, transport) so the engine and UI toasts can
+   * surface it — the engine retries once before showing it.
    */
   async uploadStream(remotePath: string, localPath: string): Promise<boolean> {
     try {
@@ -256,8 +257,7 @@ class OneDriveProviderImpl {
       } as unknown as Map<string, string>);
       return true;
     } catch (e) {
-      console.warn('OneDriveProvider.uploadStream failed', remotePath, e);
-      return false;
+      throw mapGraphError(e);
     }
   }
 
@@ -282,8 +282,8 @@ class OneDriveProviderImpl {
   /**
    * Streaming download: GET the file's bytes straight to disk through the
    * native transfer plugin (same heap-safety rationale as {@link uploadStream}).
-   * The content URL needs a bearer token. Returns `false` when the transport
-   * swallows a failure (e.g. the remote file is absent).
+   * The content URL needs a bearer token. Throws a `FileSyncError` carrying
+   * the real failure instead of flattening it to `false`.
    */
   async downloadStream(
     remotePath: string,
@@ -297,8 +297,7 @@ class OneDriveProviderImpl {
       });
       return true;
     } catch (e) {
-      console.warn('OneDriveProvider.downloadStream failed', remotePath, e);
-      return false;
+      throw mapGraphError(e);
     }
   }
 

@@ -222,7 +222,7 @@ describe('runFileBookUpload', () => {
   });
 
   test('pushes the book to every enabled backend', async () => {
-    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(true);
+    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toEqual({ ok: true });
     expect(pushBookFile).toHaveBeenCalledTimes(2);
   });
 
@@ -230,19 +230,22 @@ describe('runFileBookUpload', () => {
     pushBookFile
       .mockRejectedValueOnce(new Error('drive is down'))
       .mockResolvedValueOnce({ uploaded: true });
-    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(true);
+    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toEqual({ ok: true });
   });
 
   test('fails when no backend takes the book', async () => {
     pushBookFile.mockRejectedValue(new Error('offline'));
-    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(false);
+    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toEqual({
+      ok: false,
+      reason: 'offline',
+    });
   });
 
   test('treats an already-mirrored file as success', async () => {
     pushBookFile
       .mockResolvedValueOnce({ uploaded: false, reason: 'remote-matches' })
       .mockResolvedValueOnce({ uploaded: false, reason: 'no-source' });
-    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toBe(true);
+    expect(await runFileBookUpload(envConfig, makeBook('h1'))).toEqual({ ok: true });
   });
 });
 
@@ -255,20 +258,20 @@ describe('runFileBookDownload', () => {
 
   test('stops at the first backend that has the file', async () => {
     downloadBookFile.mockResolvedValueOnce(true);
-    expect(await runFileBookDownload(envConfig, makeBook('h1'))).toBe(true);
+    expect(await runFileBookDownload(envConfig, makeBook('h1'))).toEqual({ ok: true });
     expect(downloadBookFile).toHaveBeenCalledTimes(1);
   });
 
   test('falls through to the next backend when the first does not have it', async () => {
     downloadBookFile.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    expect(await runFileBookDownload(envConfig, makeBook('h1'))).toBe(true);
+    expect(await runFileBookDownload(envConfig, makeBook('h1'))).toEqual({ ok: true });
     expect(downloadBookFile).toHaveBeenCalledTimes(2);
   });
 
   test('stamps downloadedAt and coverDownloadedAt on success', async () => {
     downloadBookFile.mockResolvedValueOnce(true);
     const book = makeBook('h1');
-    expect(await runFileBookDownload(envConfig, book)).toBe(true);
+    expect(await runFileBookDownload(envConfig, book)).toEqual({ ok: true });
     expect(book.downloadedAt).toBeTruthy();
     expect(book.coverDownloadedAt).toBeTruthy();
   });
