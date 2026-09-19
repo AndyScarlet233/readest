@@ -444,6 +444,63 @@ fn file_to_body(channel: Channel<ProgressPayload>, file: File, file_len: u64) ->
     reqwest::Body::wrap_stream(stream)
 }
 
+/// Publish `source` over `destination` atomically on Windows: ReplaceFileW
+/// avoids the delete-then-rename gap of `std::fs::rename` for an existing
+/// destination. Falls back to MoveFileExW when the destination does not exist
+/// yet (first write to a fresh path).
+#[cfg(windows)]
+pub(crate) fn replace_file_atomically(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let to_wide = |path: &Path| {
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>()
+    };
+    let source = to_wide(source);
+    let destination = to_wide(destination);
+
+    let replaced = unsafe {
+        ReplaceFileW(
+            destination.as_ptr(),
+            source.as_ptr(),
+            std::ptr::null(),
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if replaced != 0 {
+        return Ok(());
+    }
+
+    // The first write has no destination yet. MoveFileExW is atomic on the
+    // same volume and also handles a destination created in the small race.
+    let error = std::io::Error::last_os_error();
+    if error.kind() != std::io::ErrorKind::NotFound {
+        return Err(error);
+    }
+    let moved = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved != 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

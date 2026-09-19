@@ -19,6 +19,7 @@ import {
   RiMicrosoftLine,
   RiAppleLine,
   RiHeadphoneLine,
+  RiRouterLine,
 } from 'react-icons/ri';
 import { useEnv } from '@/context/EnvContext';
 import { useAuth } from '@/context/AuthContext';
@@ -54,6 +55,8 @@ import OneDriveForm from './integrations/OneDriveForm';
 import ICloudForm from './integrations/ICloudForm';
 import S3Form from './integrations/S3Form';
 import { persistCloudProviderEnabled } from './integrations/cloudSync';
+import { stopLanSync } from '@/services/lanSync/lifecycle';
+import LanForm from './integrations/LanForm';
 import {
   canToggleCloudProvider,
   getReadestCloudRowStatus,
@@ -80,6 +83,7 @@ type SubPage =
   | 's3'
   | 'onedrive'
   | 'icloud'
+  | 'lan'
   | 'readest-cloud'
   | 'readwise'
   | 'hardcover'
@@ -128,6 +132,8 @@ const IntegrationsPanel: React.FC = () => {
   const onedriveLastError = useFileSyncStore((s) => s.lastErrorByKind.onedrive);
   const isICloudSyncing = useFileSyncStore((s) => s.byKind.icloud?.isSyncing ?? false);
   const icloudLastError = useFileSyncStore((s) => s.lastErrorByKind.icloud);
+  const isLanSyncing = useFileSyncStore((s) => s.byKind.lan?.isSyncing ?? false);
+  const lanLastError = useFileSyncStore((s) => s.lastErrorByKind.lan);
   // "Configured" for iCloud = the container is reachable (an entitled build
   // with an iCloud session). Probed once; Apple Tauri platforms only.
   const [icloudAvailable, setICloudAvailable] = useState(false);
@@ -218,6 +224,7 @@ const IntegrationsPanel: React.FC = () => {
       requestedSubPage === 's3' ||
       requestedSubPage === 'onedrive' ||
       requestedSubPage === 'icloud' ||
+      requestedSubPage === 'lan' ||
       requestedSubPage === 'readwise' ||
       requestedSubPage === 'hardcover' ||
       requestedSubPage === 'notion' ||
@@ -420,6 +427,20 @@ const IntegrationsPanel: React.FC = () => {
         )}
       </div>
     );
+  if (subPage === 'lan')
+    return (
+      <div className='my-4 w-full'>
+        <SubPageHeader
+          parentLabel={_('Integrations')}
+          currentLabel={_('LAN peer')}
+          description={_(
+            'Connect to a Readest peer on your local network to sync books and progress.',
+          )}
+          onBack={() => setSubPage(null)}
+        />
+        <LanForm />
+      </div>
+    );
   if (subPage === 'readest-cloud')
     return (
       <div className='my-4 w-full'>
@@ -591,6 +612,13 @@ const IntegrationsPanel: React.FC = () => {
   const localSendStatus = !isLocalSendEnabled()
     ? _('Off')
     : localSendAlias || getLocalSendAlias() || _('On');
+  const lanStatus = !settings.lan?.enabled
+    ? _('Off')
+    : isLanSyncing
+      ? _('Connected')
+      : lanLastError
+        ? lanLastError
+        : _('Not connected');
 
   return (
     <div className='my-4 w-full space-y-6'>
@@ -755,6 +783,22 @@ const IntegrationsPanel: React.FC = () => {
                 toggleLabel={_('Sync with iCloud')}
               />
             )}
+            {/* LAN is a local, account-free backend: no premium badge or
+                plan gate, and the checkbox is available wherever the Tauri
+                server can run. Turning it off also stops the peer server. */}
+            <CloudProviderRow
+              icon={RiRouterLine}
+              title={_('LAN peer')}
+              status={lanStatus}
+              checked={!!settings.lan?.enabled}
+              canToggle={isTauriAppPlatform()}
+              onToggle={async (next) => {
+                await toggleCloudProvider('lan', next);
+                if (!next) await stopLanSync();
+              }}
+              onOpen={() => setSubPage('lan')}
+              toggleLabel={_('Sync with LAN')}
+            />
           </div>
         </div>
         {providers.length === 0 && (
