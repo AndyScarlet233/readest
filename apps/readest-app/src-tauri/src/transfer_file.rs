@@ -305,7 +305,7 @@ pub async fn download_file<R: tauri::Runtime>(
     let file = Arc::new(tokio::sync::Mutex::new(file));
     let progress = Arc::new(tokio::sync::Mutex::new(TransferStats::default()));
 
-    let results: Vec<Result<(), Error>> = stream::iter(0..part_count)
+    let results: Vec<Result<()>> = stream::iter(0..part_count)
         .map(|i| {
             let client = client.clone();
             let file = Arc::clone(&file);
