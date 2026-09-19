@@ -95,7 +95,9 @@ const syncOneBackend = async (
     strategy: strategy === 'prompt' ? 'silent' : strategy,
     syncBooks: ps?.syncBooks ?? false,
     fullSync: false,
-    concurrency: 6,
+    // A LAN peer serves uploads from a single consumer device; one bulky book
+    // pipeline at a time keeps its UI responsive (cloud backends stay at 6).
+    concurrency: kind === 'lan' ? 1 : 6,
     deviceId,
     onProgress: ({ index, total, action }) => {
       const label = action === 'downloading' ? _('Downloading') : _('Uploading');
