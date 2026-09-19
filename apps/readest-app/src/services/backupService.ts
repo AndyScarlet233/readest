@@ -67,6 +67,9 @@ export const BACKUP_SETTINGS_BLACKLIST = [
   'icloud.deviceId',
   'icloud.lastSyncedAt',
   'icloud.providerSelectedAt',
+  'lan.deviceId',
+  'lan.lastSyncedAt',
+  'lan.providerSelectedAt',
   'readestCloud.disabledAt',
   // Transient runtime state — book keys may not exist post-restore; screen
   // brightness is live device state.
@@ -100,6 +103,9 @@ export const BACKUP_SETTINGS_CREDENTIAL_FIELDS = [
   's3.secretAccessKey',
   'aiSettings.aiGatewayApiKey',
   'aiSettings.openrouterApiKey',
+  // The LAN pairing token authorises writes on the peer's server — treat it
+  // like any other long-lived credential in unencrypted backups.
+  'lan.token',
 ] as const;
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>

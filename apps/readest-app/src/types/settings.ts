@@ -212,6 +212,35 @@ export interface WebDAVSettings {
 }
 
 /**
+ * LAN file-sync settings — a peer-to-peer backend alongside
+ * {@link WebDAVSettings}: both devices run the same embedded peer server
+ * (src-tauri/src/lan_sync) and sync directly over the local network, so
+ * there is no cloud account involved. The pairing token is shared and
+ * identical on both devices, exchanged out-of-band through the pairing form.
+ * `deviceId` and `lastSyncedAt` are device-local (excluded from cross-device
+ * restore).
+ */
+export interface LanSyncSettings {
+  enabled: boolean;
+  /** Peer address, host only ("192.168.1.5"); the port travels separately. */
+  host: string;
+  /** TCP port of the PEER's lan_sync server (this device serves on its own port). */
+  port: number;
+  /** Shared pairing token; identical on both devices, exchanged via the pairing form. */
+  token: string;
+  syncProgress?: boolean;
+  syncNotes?: boolean;
+  syncBooks?: boolean;
+  fullSync?: boolean;
+  // Conflict policy — same vocabulary as KOSync/WebDAV.
+  strategy?: KOSyncStrategy;
+  deviceId?: string;
+  lastSyncedAt?: number;
+  // See {@link WebDAVSettings.providerSelectedAt}.
+  providerSelectedAt?: number;
+}
+
+/**
  * Google Drive file-sync settings. A second file-sync backend alongside
  * {@link WebDAVSettings}, sharing the same engine, sub-toggles, and strategy
  * vocabulary. Drive has no URL / credentials / root path (it is OAuth + a
@@ -540,6 +569,7 @@ export interface SystemSettings {
   s3: S3Settings;
   onedrive: OneDriveSettings;
   icloud: ICloudSettings;
+  lan: LanSyncSettings;
 
   aiSettings: AISettings;
   /**
