@@ -96,7 +96,9 @@ describe('OneDriveProvider — streaming', () => {
 
   test('uploadStream rethrows the transport error as FileSyncError', async () => {
     const h = makeOneDrive();
-    h.fetchMock.mockRejectedValueOnce(new Error('network down'));
+    // Reject every attempt: withBackoff retries network-like failures, so a
+    // one-shot rejection would leave the retry hitting an unqueued mock.
+    h.fetchMock.mockRejectedValue(new Error('network down'));
 
     await expect(h.provider.uploadStream!(BOOK, '/disk/book.epub')).rejects.toThrow('network down');
   });

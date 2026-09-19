@@ -453,7 +453,8 @@ describe('TTSPlayerSheet', () => {
     // TTS_CACHE_REQUIRES_PREMIUM is false in the fork, so a signed-in free
     // user is not badged and opens the chapters view directly.
     expect(screen.queryByText('Premium')).toBeNull();
-    expect(screen.getByText('Download chapters for offline playback')).toBeTruthy();
+    // The unlocked row shows the download counter instead of the premium hint.
+    expect(screen.queryByText('Download chapters for offline playback')).toBeNull();
     fireEvent.click(screen.getByLabelText('Offline Audio'));
     expect(screen.getByText('chapters-view')).toBeTruthy();
     expect(routerPush).not.toHaveBeenCalled();

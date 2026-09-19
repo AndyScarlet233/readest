@@ -222,7 +222,7 @@ export const runFileBookUpload = async (
       reason = e instanceof Error ? e.message : String(e);
     }
   }
-  return { ok: anyUploaded, reason };
+  return { ok: anyUploaded, reason: anyUploaded ? undefined : reason };
 };
 
 /**
