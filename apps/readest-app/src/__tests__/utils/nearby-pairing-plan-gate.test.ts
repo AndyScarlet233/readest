@@ -19,13 +19,13 @@ describe('isNearbyPairingInPlan', () => {
   });
 });
 
-describe('isNearbyPairingAllowed (premium paywall)', () => {
-  test('pairing for confirmation-free drops requires a paid plan', () => {
-    expect(NEARBY_PAIRING_REQUIRES_PREMIUM).toBe(true);
-    expect(isNearbyPairingAllowed('free', false)).toBe(false);
+describe('isNearbyPairingAllowed (fork unlock)', () => {
+  test('confirmation-free pairing stays available on every plan', () => {
+    expect(NEARBY_PAIRING_REQUIRES_PREMIUM).toBe(false);
+    expect(isNearbyPairingAllowed('free', false)).toBe(true);
     expect(isNearbyPairingAllowed('plus', false)).toBe(true);
     expect(isNearbyPairingAllowed('pro', false)).toBe(true);
-    expect(isNearbyPairingAllowed('purchase', false)).toBe(false);
+    expect(isNearbyPairingAllowed('purchase', false)).toBe(true);
   });
 
   test('the Full Customization unlock entitles a free user', () => {
