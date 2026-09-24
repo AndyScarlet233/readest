@@ -68,6 +68,19 @@ describe('resolveCloudSyncGate', () => {
     });
   });
 
+  test('fork unlock keeps OneDrive active for a free plan instead of silently pausing it', () => {
+    const settings = makeSettings({
+      onedrive: { enabled: true, syncBooks: true },
+    } as Partial<SystemSettings>);
+
+    expect(resolveCloudSyncGate(settings, 'free')).toEqual({
+      readest: false,
+      backends: ['onedrive'],
+      paused: false,
+    });
+    expect(getActiveFileSyncBackends(settings, 'free')).toEqual(['onedrive']);
+  });
+
   test('falls back to the cached user plan when no plan argument is given', () => {
     vi.mocked(isCloudSyncAllowed).mockImplementation((plan) => plan !== 'free');
     const settings = makeSettings({ webdav: { enabled: true } } as Partial<SystemSettings>);
