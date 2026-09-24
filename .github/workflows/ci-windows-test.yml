@@ -1,0 +1,87 @@
+name: Windows x64 test build
+
+on:
+  push:
+    branches:
+      - ci/v0.12.10-build
+    paths:
+      - '.github/workflows/ci-windows-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          submodules: recursive
+          persist-credentials: false
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+
+      - name: setup node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: setup vendors
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16
+        with:
+          key: test-windows-x64-cargo
+
+      - name: configure unsigned test build
+        shell: bash
+        run: |
+          cat > .env.local <<'EOF'
+          NEXT_PUBLIC_POSTHOG_KEY=
+          NEXT_PUBLIC_POSTHOG_HOST=
+          NEXT_PUBLIC_SUPABASE_URL=
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=
+          NEXT_PUBLIC_APP_PLATFORM=tauri
+          SENTRY_DSN=
+          SENTRY_AUTH_TOKEN=
+          SENTRY_ORG=readest
+          SENTRY_PROJECT=readest
+          EOF
+          cp .env.local apps/readest-app/.env.local
+          node -e "const fs=require('fs');const f='apps/readest-app/src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(f,'utf8'));j.bundle.createUpdaterArtifacts=false;fs.writeFileSync(f,JSON.stringify(j,null,2)+'\\n')"
+
+      - name: build Windows x64 NSIS
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          cd apps/readest-app
+          pnpm tauri build --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: collect test artifacts
+        shell: bash
+        run: |
+          mkdir -p test-artifacts
+          cp target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe test-artifacts/
+          cp target/x86_64-pc-windows-msvc/release/readest.exe test-artifacts/Readest_x64-portable-test.exe
+          ls -lh test-artifacts
+
+      - name: upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: readest-v0.12.10-windows-x64-test
+          path: test-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
