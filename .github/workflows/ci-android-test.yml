@@ -88,11 +88,29 @@ jobs:
           git checkout .
           pnpm tauri android build
 
-      - name: collect APK
+      - name: sign and collect APK
         shell: bash
         run: |
+          set -euo pipefail
+          unsigned="apps/readest-app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
           mkdir -p test-artifacts
-          cp apps/readest-app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk test-artifacts/Readest_0.12.10_universal-test.apk
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/readest-test.jks" \
+            -storepass android \
+            -alias readesttest \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Readest Test,O=Readest Test,C=US"
+          apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$apksigner_path" sign \
+            --ks "$RUNNER_TEMP/readest-test.jks" \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out test-artifacts/Readest_0.12.10_universal-test.apk \
+            "$unsigned"
+          "$apksigner_path" verify --verbose test-artifacts/Readest_0.12.10_universal-test.apk
           ls -lh test-artifacts
 
       - name: upload APK
